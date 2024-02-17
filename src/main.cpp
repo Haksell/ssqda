@@ -38,20 +38,22 @@ double reductionAngle(double x) {
 }
 
 double calculateDistance(const Position& myPos, const Position& enemyPos) {
-    return std::sqrt(std::pow(enemyPos.x - myPos.x, 2) + std::pow(enemyPos.y - myPos.y, 2));
+	return std::sqrt(std::pow(enemyPos.x - myPos.x, 2) + std::pow(enemyPos.y - myPos.y, 2));
 }
 
 double normalizeAngle(double angle) {
-    while (angle < 0) angle += 2 * M_PI;
-    while (angle >= 2 * M_PI) angle -= 2 * M_PI;
-    return angle;
+	while (angle < 0)
+		angle += 2 * M_PI;
+	while (angle >= 2 * M_PI)
+		angle -= 2 * M_PI;
+	return angle;
 }
 
 double calculateAngleToTarget(const Position& from, const Position& to) {
-    double dy = to.y - from.y;
-    double dx = to.x - from.x;
-    double angleToTarget = atan2(dy, dx);
-    return normalizeAngle(angleToTarget);
+	double dy = to.y - from.y;
+	double dx = to.x - from.x;
+	double angleToTarget = atan2(dy, dx);
+	return normalizeAngle(angleToTarget);
 }
 
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
@@ -88,20 +90,20 @@ void goTo(Position fromPos, Position toPos) {
 }
 
 bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
-    double maxRange = 4 * squareSize;
-    double distanceToEnemy = calculateDistance(myPos, enemyPos);
+	double maxRange = 4 * squareSize;
+	double distanceToEnemy = calculateDistance(myPos, enemyPos);
 
-    if (distanceToEnemy > maxRange) return false;
+	if (distanceToEnemy > maxRange) return false;
 
-    double myOrientation = normalizeAngle(myAngle);
-    double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
+	double myOrientation = normalizeAngle(myAngle);
+	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
 
-    double angleDifference = abs(myOrientation - angleToEnemy);
-    angleDifference = std::min(angleDifference, 2 * M_PI - angleDifference);
+	double angleDifference = abs(myOrientation - angleToEnemy);
+	angleDifference = std::min(angleDifference, 2 * M_PI - angleDifference);
 
-    const double tolerance = M_PI / 24;
+	const double tolerance = M_PI / 24;
 
-    return angleDifference <= tolerance;
+	return angleDifference <= tolerance;
 }
 
 void reset() {
@@ -164,12 +166,13 @@ void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 		float paintValue = possessions[y][x] == teamId ? 0.1 : possessions[y][x] == 0 ? 1 : 2;
 		bool isWall = ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
 					   (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]));
+		if (isWall) continue;
 		bool straightPath =
 			(depth >= 2) &&
 			((x - stack[depth - 1][0]) == (stack[depth - 1][0] - stack[depth - 2][0])) &&
 			((y - stack[depth - 1][1]) == (stack[depth - 1][1] - stack[depth - 2][1]));
 		bool goesBack = (depth >= 2) && (x == stack[depth - 2][0]) && (y == stack[depth - 2][1]);
-		float addScore = paintValue + (possessions[y][x] & 4) * rocketValue - 20 * isWall -
+		float addScore = paintValue + (possessions[y][x] & 4) * rocketValue -
 						 0.5 * (dir == ROCKET) + 0.5 * straightPath - 0.5 * goesBack;
 		float newScore = score + addScore * EXPONENTS[depth];
 		uint8_t prev = possessions[y][x];
@@ -217,15 +220,18 @@ void loop() {
 			RobotList all_bots = gladiator->game->getPlayingRobotsId();
 			for (int i = 0; i < 4; i++) {
 				RobotData other = gladiator->game->getOtherRobotData(all_bots.ids[i]);
-				if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 && other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0) {
-					if (willHit({myRobot.position.x, myRobot.position.y}, {other.position.x, other.position.y}, {myRobot.position.a})) {
+				if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 &&
+					other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0) {
+					if (willHit({myRobot.position.x, myRobot.position.y},
+								{other.position.x, other.position.y}, {myRobot.position.a})) {
 						gladiator->weapon->launchRocket();
-						gladiator->log("enemy posx: %f, enemy posx: %f", other.position.x, other.position.y);
+						gladiator->log("enemy posx: %f, enemy posx: %f", other.position.x,
+									   other.position.y);
 						break;
 					}
 				}
 			}
-        }
+		}
 		Position myPosition = gladiator->robot->getData().position;
 		int x = (int)(myPosition.x / squareSize);
 		int y = (int)(myPosition.y / squareSize);
