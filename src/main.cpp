@@ -8,9 +8,11 @@
 // TODO: use previous wheel speed and update
 // TODO: go backwards when appropriate
 // TODO: detect when we have to go through walls
+// TODO: shoot where people will be
+// TODO: if next cell is rocket, shoot
 
 #define SIZE 12
-#define DFS_DEPTH 7
+#define DFS_DEPTH 9
 #define M_TAU 6.283185307179586
 #define EXPONENTIONAL_EXPONENT 0.9
 
@@ -30,6 +32,7 @@ float squareSize = 0.0f;
 
 int** stack;
 uint8_t** possessions;
+// bool** disconnected;
 
 double reductionAngle(double x) {
 	x = fmod(x + PI, 2 * PI);
@@ -97,11 +100,14 @@ bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
 
 	double myOrientation = normalizeAngle(myAngle);
 	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
+	// Je suis tres sceptique de ces calculs avec les modulo 2x pi, ca explique sans doute des
+	// oublis de tirs
+	// Mettez tous les angles entre -pi et pi, et faites min(abs(x-y), 360+x-y, 360+y-x)
 
 	double angleDifference = abs(myOrientation - angleToEnemy);
 	angleDifference = std::min(angleDifference, 2 * M_PI - angleDifference);
 
-	const double tolerance = M_PI / 24;
+	const double tolerance = M_PI / 24; // TODO: smaller tolerances for farther stuff
 
 	return angleDifference <= tolerance;
 }
@@ -173,7 +179,7 @@ void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 			((y - stack[depth - 1][1]) == (stack[depth - 1][1] - stack[depth - 2][1]));
 		bool goesBack = (depth >= 2) && (x == stack[depth - 2][0]) && (y == stack[depth - 2][1]);
 		float addScore = paintValue + (possessions[y][x] & 4) * rocketValue -
-						 0.5 * (dir == ROCKET) + 0.5 * straightPath - 0.5 * goesBack;
+						 0.2 * (dir == ROCKET) + 0.5 * straightPath - 0.5 * goesBack;
 		float newScore = score + addScore * EXPONENTS[depth];
 		uint8_t prev = possessions[y][x];
 		possessions[y][x] = teamId;
@@ -200,7 +206,7 @@ void getNextMove(int x, int y, int* bestX, int* bestY) {
 void loop() {
 	if (gladiator->game->isStarted() && gladiator->robot->getData().lifes) {
 		if (frameCount == 0) {
-			delay(69);
+			delay(69); // TODO 500
 		}
 		++frameCount;
 		if ((frameCount & 63) == 0) {
