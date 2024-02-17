@@ -55,8 +55,8 @@ double calculateAngleToTarget(const Position& from, const Position& to) {
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
 
 void goTo(Position fromPos, Position toPos) {
-	static const float wlimit = 0.4;
-	static const float vlimit = 0.8;
+	static const float wlimit = 0.3;
+	static const float vlimit = 0.7;
 	static const float epsilon = 0.07;
 	double consvl, consvr;
 	double dx = toPos.x - fromPos.x;
@@ -86,7 +86,7 @@ void goTo(Position fromPos, Position toPos) {
 }
 
 bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
-	double maxRange = 5 * squareSize;
+	double maxRange = 5.0 * squareSize;
 	double distanceToEnemy = calculateDistance(myPos, enemyPos);
 	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
 	if (distanceToEnemy > maxRange) return false;
@@ -209,10 +209,6 @@ void getNextMove(int x, int y, int* bestX, int* bestY) {
 	stack[0][1] = y;
 	float bestScore = 0.0f;
 	dfs(1, 0, &bestScore, bestX, bestY);
-	if (bestScore == 0) {
-		*bestX = SIZE >> 1;
-		*bestY = SIZE >> 1;
-	}
 }
 
 void updateMaze(const RobotData& myRobot) {
@@ -251,7 +247,7 @@ void loop() {
 			}
 		}
 		updateMaze(myRobot);
-		// if (gladiator->weapon->canLaunchRocket()) 
+		// if (gladiator->weapon->canLaunchRocket())
 		// 	gladiator->log("has rocket");
 		// else
 		// 	gladiator->log("doesnt have rocket");
