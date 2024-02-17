@@ -247,6 +247,10 @@ void loop() {
 			}
 		}
 		updateMaze(myRobot);
+		if (gladiator->weapon->canLaunchRocket()) 
+			gladiator->log("has rocket");
+		else
+			gladiator->log("doesnt have rocket");
 		if (gladiator->weapon->canLaunchRocket()) {
 			RobotList allBots = gladiator->game->getPlayingRobotsId();
 			for (int i = 0; i < 4; i++) {
