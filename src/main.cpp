@@ -1,6 +1,7 @@
 #include "gladiator.h"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #undef abs
 
 // TODO: all pairs shortest path
@@ -36,6 +37,23 @@ double reductionAngle(double x) {
 	return x - PI;
 }
 
+double calculateDistance(const Position& myPos, const Position& enemyPos) {
+    return std::sqrt(std::pow(enemyPos.x - myPos.x, 2) + std::pow(enemyPos.y - myPos.y, 2));
+}
+
+double normalizeAngle(double angle) {
+    while (angle < 0) angle += 2 * M_PI;
+    while (angle >= 2 * M_PI) angle -= 2 * M_PI;
+    return angle;
+}
+
+double calculateAngleToTarget(const Position& from, const Position& to) {
+    double dy = to.y - from.y;
+    double dx = to.x - from.x;
+    double angleToTarget = atan2(dy, dx);
+    return normalizeAngle(angleToTarget);
+}
+
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
 
 void goTo(Position fromPos, Position toPos) {
@@ -67,6 +85,23 @@ void goTo(Position fromPos, Position toPos) {
 	}
 	gladiator->control->setWheelSpeed(WheelAxis::LEFT, consvl, false);
 	gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
+}
+
+bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
+    double maxRange = 4 * squareSize;
+    double distanceToEnemy = calculateDistance(myPos, enemyPos);
+
+    if (distanceToEnemy > maxRange) return false;
+
+    double myOrientation = normalizeAngle(myAngle);
+    double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
+
+    double angleDifference = abs(myOrientation - angleToEnemy);
+    angleDifference = std::min(angleDifference, 2 * M_PI - angleDifference);
+
+    const double tolerance = M_PI / 24;
+
+    return angleDifference <= tolerance;
 }
 
 void reset() {
@@ -177,7 +212,20 @@ void loop() {
 				--maxIdx;
 			}
 		}
-		if (gladiator->weapon->canLaunchRocket()) gladiator->weapon->launchRocket();
+		RobotData myRobot = gladiator->robot->getData();
+		if (gladiator->weapon->canLaunchRocket()) {
+			RobotList all_bots = gladiator->game->getPlayingRobotsId();
+			for (int i = 0; i < 4; i++) {
+				RobotData other = gladiator->game->getOtherRobotData(all_bots.ids[i]);
+				if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 && other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0) {
+					if (willHit({myRobot.position.x, myRobot.position.y}, {other.position.x, other.position.y}, {myRobot.position.a})) {
+						gladiator->weapon->launchRocket();
+						gladiator->log("enemy posx: %f, enemy posx: %f", other.position.x, other.position.y);
+						break;
+					}
+				}
+			}
+        }
 		Position myPosition = gladiator->robot->getData().position;
 		int x = (int)(myPosition.x / squareSize);
 		int y = (int)(myPosition.y / squareSize);
