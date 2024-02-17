@@ -84,7 +84,6 @@ void goTo(Position fromPos, Position toPos) {
 		consvl = 0.0;
 		consvr = 0.0;
 	}
-	gladiator->log("%.2f %.2f", consvl, consvr);
 	gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
 	gladiator->control->setWheelSpeed(WheelAxis::LEFT, consvl, false);
 }
@@ -124,59 +123,6 @@ int getScore(int x, int y, t_dir dir) {
 																		  : 2);
 }
 
-void dfs(int stack[DFS_DEPTH][2], size_t size, int score, int* bestScore, int* bestX, int* bestY,
-		 uint8_t currentMaze[SIZE][SIZE]) {
-	static int neighbors[5][3] = {
-		{0, 0, ROCKET}, {0, 1, NORTH}, {1, 0, EAST}, {0, -1, SOUTH}, {-1, 0, WEST},
-	};
-	if (score > *bestScore) {
-		*bestScore = score;
-		*bestX = stack[1][0];
-		*bestY = stack[1][1];
-	}
-	if (size == DFS_DEPTH) return;
-	for (size_t i = 0; i < 5; ++i) {
-		int x = stack[size - 1][0] + neighbors[i][0];
-		int y = stack[size - 1][1] + neighbors[i][1];
-		t_dir dir = (t_dir)neighbors[i][2];
-		if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx) continue;
-		int newScore =
-			score + (currentMaze[y][x] & 4) +
-			(currentMaze[y][x] == teamId ? 0
-			 : currentMaze[y][x] == 0	 ? 1
-										 : 2) -
-			5 * ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
-				 (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]));
-		uint8_t prev = currentMaze[y][x];
-		currentMaze[y][x] = teamId;
-		stack[size][0] = x;
-		stack[size][1] = y;
-		dfs(stack, size + 1, newScore, bestScore, bestX, bestY, currentMaze);
-		stack[size][0] = -1;
-		stack[size][1] = -1;
-		currentMaze[y][x] = prev;
-	}
-}
-
-void getNextMove(int x, int y, int* bestX, int* bestY) {
-	return;
-	uint8_t currentMaze[SIZE][SIZE];
-	for (size_t my = 0; my < SIZE; my++) {
-		for (size_t mx = 0; mx < SIZE; mx++) {
-			const MazeSquare* mazeSquare = gladiator->maze->getSquare(mx, my);
-			currentMaze[my][mx] = mazeSquare->possession | mazeSquare->coin.value << 2;
-		}
-	}
-	int stack[DFS_DEPTH][2];
-	stack[0][0] = x;
-	stack[0][1] = y;
-	for (size_t i = 1; i < DFS_DEPTH; ++i) {
-		stack[i][0] = -1;
-		stack[i][1] = -1;
-	}
-	dfs(stack, 1, 0, 0, bestX, bestY, currentMaze);
-}
-
 void loop() {
 	if (gladiator->game->isStarted()) {
 		if (frameCount == 0) {
@@ -199,12 +145,37 @@ void loop() {
 		Position myPosition = gladiator->robot->getData().position;
 		int x = (int)(myPosition.x / squareSize);
 		int y = (int)(myPosition.y / squareSize);
-		int bestX = SIZE << 1;
-		int bestY = SIZE << 1;
-		getNextMove(x, y, &bestX, &bestY);
+		int neighbors[5][3] = {
+			{x, y, ROCKET},	   {x, y + 1, NORTH}, {x + 1, y, EAST},
+			{x, y - 1, SOUTH}, {x - 1, y, WEST},
+		};
+		int bestX = -1;
+		int bestY = -1;
+		int bestScore = -1;
+		for (uint8_t i = 0; i < 5; ++i) {
+			int score = getScore(neighbors[i][0], neighbors[i][1], (t_dir)neighbors[i][2]);
+			if (score > bestScore) {
+				bestScore = score;
+				bestX = neighbors[i][0];
+				bestY = neighbors[i][1];
+			}
+		}
+		if (bestScore == -1) {
+			bestX = SIZE >> 1;
+			bestY = SIZE >> 1;
+			for (int tryY = minIdx; tryY <= maxIdx; ++tryY) {
+				for (int tryX = minIdx; tryX <= maxIdx; ++tryX) {
+					int score = getScore(tryX, tryY, ROCKET);
+					if (score > bestScore) {
+						bestScore = score;
+						bestX = tryX;
+						bestY = tryY;
+					}
+				}
+			}
+		}
 		float targetX = ((float)bestX + 0.5f) * squareSize;
 		float targetY = ((float)bestY + 0.5f) * squareSize;
-		gladiator->log("%.2f %.2f", targetX, targetY);
 		Position goal{targetX, targetY, 0};
 		goTo(myPosition, goal);
 		delay(5);
