@@ -89,8 +89,11 @@ void goTo(Position fromPos, Position toPos) {
 }
 
 void reset() {
-	startTime = std::chrono::high_resolution_clock::now();
 	frameCount = 0;
+	currentTimeBlock = 0;
+	minIdx = 0;
+	maxIdx = SIZE - 1;
+	startTime = std::chrono::high_resolution_clock::now();
 	squareSize = gladiator->maze->getSquareSize();
 	teamId = gladiator->robot->getData().teamId;
 	gladiator->log("%d", teamId);
