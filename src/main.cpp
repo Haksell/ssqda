@@ -64,7 +64,7 @@ double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > 
 
 void goTo(Position fromPos, Position toPos) {
 	static const float wlimit = 0.4;
-	static const float vlimit = 0.6;
+	static const float vlimit = 0.7;
 	static const float epsilon = 0.07;
 	double consvl, consvr;
 	double dx = toPos.x - fromPos.x;
@@ -74,10 +74,10 @@ void goTo(Position fromPos, Position toPos) {
 	if (d > epsilon) {
 		double rho = atan2(dy, dx);
 		double angle = reductionAngle(rho - fromPos.a);
-		double consw = clamp(12 * angle, -wlimit, wlimit);
+		double consw = clamp(8 * angle, -wlimit, wlimit);
 		double consv = clamp(d * cos(angle), -vlimit, vlimit);
-		consvl = consv - consw;
-		consvr = consv + consw;
+		consvl = clamp(consv - consw, -1.0, 1.0);
+		consvr = clamp(consv + consw, -1.0, 1.0);
 	} else {
 		consvl = 0;
 		consvr = 0;
@@ -123,8 +123,12 @@ int getScore(int x, int y, t_dir dir) {
 
 void loop() {
 	if (gladiator->game->isStarted()) {
+		if (frameCount == 0) {
+			delay(69);
+		}
 		++frameCount;
 		if ((frameCount & 63) == 0) {
+			// gladiator->log("%lf", gladiator->robot->getData().speedLimit); // TODO: use
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			auto deltaTime =
 				std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime)
