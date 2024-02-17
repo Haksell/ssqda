@@ -209,13 +209,17 @@ void getNextMove(int x, int y, int* bestX, int* bestY) {
 	stack[0][1] = y;
 	float bestScore = 0.0f;
 	dfs(1, 0, &bestScore, bestX, bestY);
+	if (bestScore == 0) {
+		*bestX = SIZE >> 1;
+		*bestY = SIZE >> 1;
+	}
 }
 
 void updateMaze(const RobotData& myRobot) {
 	RobotList allBots = gladiator->game->getPlayingRobotsId();
 	for (int i = 0; i < 4; i++) {
 		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
-		if (other.teamId != myRobot.teamId && !other.lifes) {
+		if (!other.lifes) {
 			int y = (int)(other.position.y / squareSize);
 			int x = (int)(other.position.x / squareSize);
 			maze[y][x][NORTH] = false;
