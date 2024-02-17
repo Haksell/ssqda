@@ -172,7 +172,7 @@ void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 		int x = stack[depth - 1][0] + neighbors[i][0];
 		int y = stack[depth - 1][1] + neighbors[i][1];
 		if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx) continue;
-		float paintValue = possessions[y][x] == teamId ? 0.1 : possessions[y][x] == 0 ? 1 : 2;
+		float paintValue = possessions[y][x] == teamId ? 0.01 : possessions[y][x] == 0 ? 1 : 2;
 		bool isWall = ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
 					   (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]));
 		// if (isWall && connectedToCenter[stack[depth - 1][1]][stack[depth - 1][0]])  {
@@ -209,6 +209,7 @@ void getNextMove(int x, int y, int* bestX, int* bestY) {
 	stack[0][1] = y;
 	float bestScore = 0.0f;
 	dfs(1, 0, &bestScore, bestX, bestY);
+	// gladiator->log("dfs done");
 }
 
 void updateMaze(const RobotData& myRobot) {
