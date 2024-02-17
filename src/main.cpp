@@ -14,7 +14,7 @@
 // TODO: find global variables to reset
 
 #define SIZE 12
-#define DFS_DEPTH 8
+#define DFS_DEPTH 9
 #define M_TAU 6.283185307179586
 #define EXPONENTIONAL_EXPONENT 0.9
 
@@ -227,6 +227,10 @@ void updateMaze(const RobotData& myRobot) {
 	}
 }
 
+float targetX = 0.0f;
+float targetY = 0.0f;
+Position goal{targetX, targetY, 0};
+
 void loop() {
 	if (gladiator->game->isStarted() && gladiator->robot->getData().lifes) {
 		RobotData myRobot = gladiator->robot->getData();
@@ -267,14 +271,16 @@ void loop() {
 			}
 		}
 		Position myPosition = gladiator->robot->getData().position;
-		int x = (int)(myPosition.x / squareSize);
-		int y = (int)(myPosition.y / squareSize);
-		int bestX = SIZE >> 1;
-		int bestY = SIZE >> 1;
-		getNextMove(x, y, &bestX, &bestY);
-		float targetX = ((float)bestX + 0.5f) * squareSize;
-		float targetY = ((float)bestY + 0.5f) * squareSize;
-		Position goal{targetX, targetY, 0};
+		if ((frameCount & 15) == 0 || frameCount == 0) {
+			int x = (int)(myPosition.x / squareSize);
+			int y = (int)(myPosition.y / squareSize);
+			int bestX = SIZE >> 1;
+			int bestY = SIZE >> 1;
+			getNextMove(x, y, &bestX, &bestY);
+			targetX = ((float)bestX + 0.5f) * squareSize;
+			targetY = ((float)bestY + 0.5f) * squareSize;
+			goal = {targetX, targetY, 0};
+		}
 		goTo(myPosition, goal);
 		delay(5);
 	}
