@@ -6,12 +6,11 @@
 // TODO: all pairs shortest path
 // TODO: use previous wheel speed and update
 // TODO: go backwards when appropriate
+// TODO: detect when we have to go through walls
 
 #define SIZE 12
-#define GOTO_ANGLE 0.2
 #define DFS_DEPTH 7
 #define M_TAU 6.283185307179586
-#define M_HALF_PI 1.5707963267948966
 #define EXPONENTIONAL_EXPONENT 0.9
 
 float EXPONENTS[DFS_DEPTH] = {1.0};
@@ -37,41 +36,11 @@ double reductionAngle(double x) {
 	return x - PI;
 }
 
-void printMaze() {
-	for (int y = 0; y < SIZE; ++y) {
-		gladiator->log("%02d %02d %02d %02d %02d %02d %02d %02d %02d %02d %02d %02d",
-					   maze[y][0][NORTH] | maze[y][0][EAST] << 1 | maze[y][0][SOUTH] << 2 |
-						   maze[y][0][WEST] << 3,
-					   maze[y][1][NORTH] | maze[y][1][EAST] << 1 | maze[y][1][SOUTH] << 2 |
-						   maze[y][1][WEST] << 3,
-					   maze[y][2][NORTH] | maze[y][2][EAST] << 1 | maze[y][2][SOUTH] << 2 |
-						   maze[y][2][WEST] << 3,
-					   maze[y][3][NORTH] | maze[y][3][EAST] << 1 | maze[y][3][SOUTH] << 2 |
-						   maze[y][3][WEST] << 3,
-					   maze[y][4][NORTH] | maze[y][4][EAST] << 1 | maze[y][4][SOUTH] << 2 |
-						   maze[y][4][WEST] << 3,
-					   maze[y][5][NORTH] | maze[y][5][EAST] << 1 | maze[y][5][SOUTH] << 2 |
-						   maze[y][5][WEST] << 3,
-					   maze[y][6][NORTH] | maze[y][6][EAST] << 1 | maze[y][6][SOUTH] << 2 |
-						   maze[y][6][WEST] << 3,
-					   maze[y][7][NORTH] | maze[y][7][EAST] << 1 | maze[y][7][SOUTH] << 2 |
-						   maze[y][7][WEST] << 3,
-					   maze[y][8][NORTH] | maze[y][8][EAST] << 1 | maze[y][8][SOUTH] << 2 |
-						   maze[y][8][WEST] << 3,
-					   maze[y][9][NORTH] | maze[y][9][EAST] << 1 | maze[y][9][SOUTH] << 2 |
-						   maze[y][9][WEST] << 3,
-					   maze[y][10][NORTH] | maze[y][10][EAST] << 1 | maze[y][10][SOUTH] << 2 |
-						   maze[y][10][WEST] << 3,
-					   maze[y][11][NORTH] | maze[y][11][EAST] << 1 | maze[y][11][SOUTH] << 2 |
-						   maze[y][11][WEST] << 3);
-	}
-}
-
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
 
 void goTo(Position fromPos, Position toPos) {
 	static const float wlimit = 0.4;
-	static const float vlimit = 0.7;
+	static const float vlimit = 0.8;
 	static const float epsilon = 0.07;
 	double consvl, consvr;
 	double dx = toPos.x - fromPos.x;
@@ -81,11 +50,17 @@ void goTo(Position fromPos, Position toPos) {
 	if (d > epsilon) {
 		double rho = atan2(dy, dx);
 		double angle = reductionAngle(rho - fromPos.a);
-		double consw = clamp(angle, -wlimit, wlimit);
+		double consw = clamp(2 * angle, -wlimit, wlimit);
 		double consv = clamp(clamp(d, 0.3, 3) * cos(angle), -vlimit, vlimit);
+		consvl = clamp(consv - consw, -1.0, 1.0);
+		consvr = clamp(consv + consw, -1.0, 1.0);
 		double speedLimit = gladiator->robot->getData().speedLimit;
-		consvl = clamp(consv - consw, -1.0, 1.0) * speedLimit;
-		consvr = clamp(consv + consw, -1.0, 1.0) * speedLimit;
+		if (speedLimit < 0.3) {
+			double factor =
+				speedLimit / std::max(0.1, std::max(std::abs(consvl), std::abs(consvr)));
+			consvl *= factor;
+			consvr *= factor;
+		}
 	} else {
 		consvl = 0.0;
 		consvr = 0.0;
@@ -111,7 +86,6 @@ void reset() {
 			maze[y][x][WEST] = !!mazeSquare->westSquare;
 		}
 	}
-	// printMaze();
 }
 
 void setup() {
@@ -128,36 +102,46 @@ void setup() {
 	gladiator->game->onReset(&reset);
 }
 
-void dfs(int** stack, size_t depth, float score, float* bestScore, int* bestX, int* bestY,
-		 uint8_t** possessions) {
+void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 	static int neighbors[5][3] = {
 		{0, 0, ROCKET}, {0, 1, NORTH}, {1, 0, EAST}, {0, -1, SOUTH}, {-1, 0, WEST},
 	};
 	if (score > *bestScore) {
 		*bestScore = score;
+		int dx = stack[1][0] - stack[0][0];
+		int dy = stack[1][1] - stack[0][1];
 		*bestX = stack[1][0];
 		*bestY = stack[1][1];
+		for (size_t i = 2; i < depth; ++i) {
+			if (stack[i][0] - stack[i - 1][0] != dx || stack[i][1] - stack[i - 1][1] != dy) break;
+			*bestX = stack[i][0];
+			*bestY = stack[i][1];
+		}
 	}
 	if (depth == DFS_DEPTH) return;
+	float rocketValue = gladiator->weapon->canLaunchRocket() ? 2.0 : 5.0;
 	for (size_t i = 0; i < 5; ++i) {
+		t_dir dir = (t_dir)neighbors[i][2];
+		if (depth != 1 && dir == ROCKET) continue;
 		int x = stack[depth - 1][0] + neighbors[i][0];
 		int y = stack[depth - 1][1] + neighbors[i][1];
-		t_dir dir = (t_dir)neighbors[i][2];
 		if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx) continue;
-		float addScore =
-			(possessions[y][x] & 4) * 4.0 +
-			(possessions[y][x] == teamId ? 0.1
-			 : possessions[y][x] == 0	 ? 1
-										 : 2) -
-			10 * ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
-				  (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST])) -
-			0.5 * (dir == ROCKET);
+		float paintValue = possessions[y][x] == teamId ? 0.1 : possessions[y][x] == 0 ? 1 : 2;
+		bool isWall = ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
+					   (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]));
+		bool straightPath =
+			(depth >= 2) &&
+			((x - stack[depth - 1][0]) == (stack[depth - 1][0] - stack[depth - 2][0])) &&
+			((y - stack[depth - 1][1]) == (stack[depth - 1][1] - stack[depth - 2][1]));
+		bool goesBack = (depth >= 2) && (x == stack[depth - 2][0]) && (y == stack[depth - 2][1]);
+		float addScore = paintValue + (possessions[y][x] & 4) * rocketValue - 20 * isWall -
+						 0.5 * (dir == ROCKET) + 0.5 * straightPath - 0.5 * goesBack;
 		float newScore = score + addScore * EXPONENTS[depth];
 		uint8_t prev = possessions[y][x];
 		possessions[y][x] = teamId;
 		stack[depth][0] = x;
 		stack[depth][1] = y;
-		dfs(stack, depth + 1, newScore, bestScore, bestX, bestY, possessions);
+		dfs(depth + 1, newScore, bestScore, bestX, bestY);
 		possessions[y][x] = prev;
 	}
 }
@@ -172,7 +156,7 @@ void getNextMove(int x, int y, int* bestX, int* bestY) {
 	stack[0][0] = x;
 	stack[0][1] = y;
 	float bestScore = 0.0f;
-	dfs((int**)stack, 1, 0, &bestScore, bestX, bestY, (uint8_t**)possessions);
+	dfs(1, 0, &bestScore, bestX, bestY);
 }
 
 void loop() {
@@ -202,7 +186,7 @@ void loop() {
 		getNextMove(x, y, &bestX, &bestY);
 		float targetX = ((float)bestX + 0.5f) * squareSize;
 		float targetY = ((float)bestY + 0.5f) * squareSize;
-		gladiator->log("%.2f %.2f", targetX, targetY);
+		if (frameCount & 15) gladiator->log("%d %d", bestX, bestY);
 		Position goal{targetX, targetY, 0};
 		goTo(myPosition, goal);
 		delay(5);
