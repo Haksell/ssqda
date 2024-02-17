@@ -12,7 +12,7 @@
 // TODO: if next cell is rocket, shoot
 
 #define SIZE 12
-#define DFS_DEPTH 9
+#define DFS_DEPTH 8
 #define M_TAU 6.283185307179586
 #define EXPONENTIONAL_EXPONENT 0.9
 
@@ -44,19 +44,10 @@ double calculateDistance(const Position& myPos, const Position& enemyPos) {
 	return std::sqrt(std::pow(enemyPos.x - myPos.x, 2) + std::pow(enemyPos.y - myPos.y, 2));
 }
 
-double normalizeAngle(double angle) {
-	while (angle < 0)
-		angle += 2 * M_PI;
-	while (angle >= 2 * M_PI)
-		angle -= 2 * M_PI;
-	return angle;
-}
-
 double calculateAngleToTarget(const Position& from, const Position& to) {
 	double dy = to.y - from.y;
 	double dx = to.x - from.x;
-	double angleToTarget = atan2(dy, dx);
-	return normalizeAngle(angleToTarget);
+	return atan2(dy, dx);
 }
 
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
@@ -93,24 +84,14 @@ void goTo(Position fromPos, Position toPos) {
 }
 
 bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
-	double maxRange = 4 * squareSize;
+	double maxRange = 5 * squareSize;
 	double distanceToEnemy = calculateDistance(myPos, enemyPos);
-
-	if (distanceToEnemy > maxRange) return false;
-
-	double myOrientation = normalizeAngle(myAngle);
 	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
-	// Je suis tres sceptique de ces calculs avec les modulo 2x pi, ca explique sans doute des
-	// oublis de tirs
-	// Mettez tous les angles entre -pi et pi, et faites min(abs(x-y), 360+x-y, 360+y-x)
-
-	double angleDifference = abs(myOrientation - angleToEnemy);
-	angleDifference = std::min(angleDifference, 2 * M_PI - angleDifference);
-
-	const double tolerance = M_PI / 24; // TODO: smaller tolerances for farther stuff
-
-	return angleDifference <= tolerance;
+	if (distanceToEnemy > maxRange) return false;
+	double angleDifference = reductionAngle(myAngle - angleToEnemy);
+	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
 }
+
 
 void reset() {
 	frameCount = 0;
@@ -223,9 +204,9 @@ void loop() {
 		}
 		RobotData myRobot = gladiator->robot->getData();
 		if (gladiator->weapon->canLaunchRocket()) {
-			RobotList all_bots = gladiator->game->getPlayingRobotsId();
+			RobotList allBots = gladiator->game->getPlayingRobotsId();
 			for (int i = 0; i < 4; i++) {
-				RobotData other = gladiator->game->getOtherRobotData(all_bots.ids[i]);
+				RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
 				if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 &&
 					other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0) {
 					if (willHit({myRobot.position.x, myRobot.position.y},
@@ -246,7 +227,7 @@ void loop() {
 		getNextMove(x, y, &bestX, &bestY);
 		float targetX = ((float)bestX + 0.5f) * squareSize;
 		float targetY = ((float)bestY + 0.5f) * squareSize;
-		if (frameCount & 15) gladiator->log("%d %d", bestX, bestY);
+		// if (frameCount & 15) gladiator->log("%d %d", bestX, bestY);
 		Position goal{targetX, targetY, 0};
 		goTo(myPosition, goal);
 		delay(5);
