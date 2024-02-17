@@ -94,23 +94,23 @@ bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
 	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
 }
 
-void dfsFromCenter(int y, int x) {
-	if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx || connectedToCenter[y][x]) return;
-	connectedToCenter[y][x] = true;
-	dfsFromCenter(y + 1, x);
-	dfsFromCenter(y, x + 1);
-	dfsFromCenter(y - 1, x);
-	dfsFromCenter(y, x - 1);
-}
+// void dfsFromCenter(int y, int x) {
+// 	if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx || connectedToCenter[y][x]) return;
+// 	connectedToCenter[y][x] = true;
+// 	dfsFromCenter(y + 1, x);
+// 	dfsFromCenter(y, x + 1);
+// 	dfsFromCenter(y - 1, x);
+// 	dfsFromCenter(y, x - 1);
+// }
 
-void connectToCenter() {
-	for (int y = 0; y < SIZE; ++y) {
-		for (int x = 0; x < SIZE; ++x) {
-			connectedToCenter[y][x] = false;
-		}
-	}
-	dfsFromCenter(SIZE >> 1, SIZE >> 1);
-}
+// void connectToCenter() {
+// 	for (int y = 0; y < SIZE; ++y) {
+// 		for (int x = 0; x < SIZE; ++x) {
+// 			connectedToCenter[y][x] = false;
+// 		}
+// 	}
+// 	dfsFromCenter(SIZE >> 1, SIZE >> 1);
+// }
 
 void reset() {
 	frameCount = 0;
@@ -139,10 +139,10 @@ void setup() {
 	for (size_t i = 0; i < DFS_DEPTH; ++i)
 		stack[i] = (int*)malloc(2 * sizeof(int));
 	possessions = (uint8_t**)malloc(SIZE * sizeof(uint8_t*));
-	connectedToCenter = (bool**)malloc(SIZE * sizeof(bool*));
+	// connectedToCenter = (bool**)malloc(SIZE * sizeof(bool*));
 	for (size_t i = 0; i < SIZE; ++i) {
 		possessions[i] = (uint8_t*)malloc(SIZE * sizeof(uint8_t));
-		connectedToCenter[i] = (bool*)malloc(SIZE * sizeof(bool));
+		// connectedToCenter[i] = (bool*)malloc(SIZE * sizeof(bool));
 	}
 	gladiator = new Gladiator();
 	gladiator->game->onReset(&reset);
@@ -175,7 +175,12 @@ void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 		float paintValue = possessions[y][x] == teamId ? 0.1 : possessions[y][x] == 0 ? 1 : 2;
 		bool isWall = ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
 					   (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]));
-		if (isWall && connectedToCenter[stack[depth - 1][1]][stack[depth - 1][0]]) continue;
+		// if (isWall && connectedToCenter[stack[depth - 1][1]][stack[depth - 1][0]])  {
+		if (isWall)  {
+			// gladiator->log("here");
+			continue;
+		}
+
 		bool straightPath =
 			(depth >= 2) &&
 			((x - stack[depth - 1][0]) == (stack[depth - 1][0] - stack[depth - 2][0])) &&
@@ -222,7 +227,7 @@ void loop() {
 				currentTimeBlock = newTimeBlock;
 				++minIdx;
 				--maxIdx;
-				connectToCenter();
+				// connectToCenter();
 			}
 		}
 		RobotData myRobot = gladiator->robot->getData();
