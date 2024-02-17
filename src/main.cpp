@@ -20,7 +20,7 @@
 
 float EXPONENTS[DFS_DEPTH] = {1.0};
 
-typedef enum e_dir { NORTH = 0, EAST, SOUTH, WEST, ROCKET } t_dir;
+typedef enum e_dir { NORTH = 0, EAST, SOUTH, WEST, ROCKET, DEAD } t_dir;
 
 Gladiator* gladiator;
 bool maze[SIZE][SIZE][4];
@@ -176,7 +176,7 @@ void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 		bool isWall = ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
 					   (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]));
 		// if (isWall && connectedToCenter[stack[depth - 1][1]][stack[depth - 1][0]])  {
-		if (isWall)  {
+		if (isWall) {
 			// gladiator->log("here");
 			continue;
 		}
@@ -186,7 +186,8 @@ void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 			((x - stack[depth - 1][0]) == (stack[depth - 1][0] - stack[depth - 2][0])) &&
 			((y - stack[depth - 1][1]) == (stack[depth - 1][1] - stack[depth - 2][1]));
 		bool goesBack = (depth >= 2) && (x == stack[depth - 2][0]) && (y == stack[depth - 2][1]);
-		float addScore = paintValue + (possessions[y][x] & 4) * rocketValue -
+		int rocketFocus = got_rocket ? 1 : rocketValue;
+		float addScore = paintValue + (possessions[y][x] & 4) * rocketFocus -
 						 0.2 * (dir == ROCKET) + 0.5 * straightPath - 0.5 * goesBack;
 		float newScore = score + addScore * EXPONENTS[depth];
 		uint8_t prev = possessions[y][x];
@@ -211,8 +212,24 @@ void getNextMove(int x, int y, int* bestX, int* bestY) {
 	dfs(1, 0, &bestScore, bestX, bestY);
 }
 
+void updateMaze(const RobotData& myRobot) {
+	RobotList allBots = gladiator->game->getPlayingRobotsId();
+	for (int i = 0; i < 4; i++) {
+		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
+		if (other.teamId != myRobot.teamId && !other.lifes) {
+			int y = (int)(other.position.y / squareSize);
+			int x = (int)(other.position.x / squareSize);
+			maze[y][x][NORTH] = false;
+			maze[y][x][EAST] = false;
+			maze[y][x][SOUTH] = false;
+			maze[y][x][WEST] = false;
+		}
+	}
+}
+
 void loop() {
 	if (gladiator->game->isStarted() && gladiator->robot->getData().lifes) {
+		RobotData myRobot = gladiator->robot->getData();
 		if (frameCount == 0) {
 			delay(69); // TODO 500
 		}
@@ -230,7 +247,7 @@ void loop() {
 				// connectToCenter();
 			}
 		}
-		RobotData myRobot = gladiator->robot->getData();
+		updateMaze(myRobot);
 		if (gladiator->weapon->canLaunchRocket()) {
 			RobotList allBots = gladiator->game->getPlayingRobotsId();
 			for (int i = 0; i < 4; i++) {
