@@ -9,9 +9,12 @@
 
 #define SIZE 12
 #define GOTO_ANGLE 0.2
-#define DFS_DEPTH 4
+#define DFS_DEPTH 7
 #define M_TAU 6.283185307179586
 #define M_HALF_PI 1.5707963267948966
+#define EXPONENTIONAL_EXPONENT 0.9
+
+float EXPONENTS[DFS_DEPTH] = {1.0};
 
 typedef enum e_dir { NORTH = 0, EAST, SOUTH, WEST, ROCKET } t_dir;
 
@@ -24,6 +27,9 @@ int currentTimeBlock = 0;
 int minIdx = 0;
 int maxIdx = SIZE - 1;
 float squareSize = 0.0f;
+
+int** stack;
+uint8_t** possessions;
 
 double reductionAngle(double x) {
 	x = fmod(x + PI, 2 * PI);
@@ -84,8 +90,8 @@ void goTo(Position fromPos, Position toPos) {
 		consvl = 0.0;
 		consvr = 0.0;
 	}
-	gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
 	gladiator->control->setWheelSpeed(WheelAxis::LEFT, consvl, false);
+	gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
 }
 
 void reset() {
@@ -96,7 +102,6 @@ void reset() {
 	startTime = std::chrono::high_resolution_clock::now();
 	squareSize = gladiator->maze->getSquareSize();
 	teamId = gladiator->robot->getData().teamId;
-	gladiator->log("%d", teamId);
 	for (int y = 0; y < SIZE; ++y) {
 		for (int x = 0; x < SIZE; ++x) {
 			const MazeSquare* mazeSquare = gladiator->maze->getSquare(x, y);
@@ -110,24 +115,68 @@ void reset() {
 }
 
 void setup() {
+	for (size_t i = 1; i < DFS_DEPTH; ++i) {
+		EXPONENTS[i] = EXPONENTS[i - 1] * EXPONENTIONAL_EXPONENT;
+	}
+	stack = (int**)malloc(DFS_DEPTH * sizeof(int*));
+	for (size_t i = 0; i < DFS_DEPTH; ++i)
+		stack[i] = (int*)malloc(2 * sizeof(int));
+	possessions = (uint8_t**)malloc(SIZE * sizeof(uint8_t*));
+	for (size_t i = 0; i < SIZE; ++i)
+		possessions[i] = (uint8_t*)malloc(SIZE * sizeof(uint8_t));
 	gladiator = new Gladiator();
 	gladiator->game->onReset(&reset);
 }
 
-int getScore(int x, int y, t_dir dir) {
-	if (x < minIdx || y < minIdx || x > maxIdx || y > maxIdx) return -1;
-	if ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
-		(dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]))
-		return -1;
-	const MazeSquare* mazeSquare = gladiator->maze->getSquare(x, y);
-	if (dir == ROCKET && mazeSquare->possession == teamId) return -1;
-	return mazeSquare->coin.value * 3 + (mazeSquare->possession == teamId ? 0
-										 : mazeSquare->possession == 0	  ? 1
-																		  : 2);
+void dfs(int** stack, size_t depth, float score, float* bestScore, int* bestX, int* bestY,
+		 uint8_t** possessions) {
+	static int neighbors[5][3] = {
+		{0, 0, ROCKET}, {0, 1, NORTH}, {1, 0, EAST}, {0, -1, SOUTH}, {-1, 0, WEST},
+	};
+	if (score > *bestScore) {
+		*bestScore = score;
+		*bestX = stack[1][0];
+		*bestY = stack[1][1];
+	}
+	if (depth == DFS_DEPTH) return;
+	for (size_t i = 0; i < 5; ++i) {
+		int x = stack[depth - 1][0] + neighbors[i][0];
+		int y = stack[depth - 1][1] + neighbors[i][1];
+		t_dir dir = (t_dir)neighbors[i][2];
+		if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx) continue;
+		float addScore =
+			(possessions[y][x] & 4) * 4.0 +
+			(possessions[y][x] == teamId ? 0.1
+			 : possessions[y][x] == 0	 ? 1
+										 : 2) -
+			10 * ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
+				  (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST])) -
+			0.5 * (dir == ROCKET);
+		float newScore = score + addScore * EXPONENTS[depth];
+		uint8_t prev = possessions[y][x];
+		possessions[y][x] = teamId;
+		stack[depth][0] = x;
+		stack[depth][1] = y;
+		dfs(stack, depth + 1, newScore, bestScore, bestX, bestY, possessions);
+		possessions[y][x] = prev;
+	}
+}
+
+void getNextMove(int x, int y, int* bestX, int* bestY) {
+	for (size_t my = 0; my < SIZE; my++) {
+		for (size_t mx = 0; mx < SIZE; mx++) {
+			const MazeSquare* mazeSquare = gladiator->maze->getSquare(mx, my);
+			possessions[my][mx] = mazeSquare->possession | mazeSquare->coin.value << 2;
+		}
+	}
+	stack[0][0] = x;
+	stack[0][1] = y;
+	float bestScore = 0.0f;
+	dfs((int**)stack, 1, 0, &bestScore, bestX, bestY, (uint8_t**)possessions);
 }
 
 void loop() {
-	if (gladiator->game->isStarted()) {
+	if (gladiator->game->isStarted() && gladiator->robot->getData().lifes) {
 		if (frameCount == 0) {
 			delay(69);
 		}
@@ -148,37 +197,12 @@ void loop() {
 		Position myPosition = gladiator->robot->getData().position;
 		int x = (int)(myPosition.x / squareSize);
 		int y = (int)(myPosition.y / squareSize);
-		int neighbors[5][3] = {
-			{x, y, ROCKET},	   {x, y + 1, NORTH}, {x + 1, y, EAST},
-			{x, y - 1, SOUTH}, {x - 1, y, WEST},
-		};
-		int bestX = -1;
-		int bestY = -1;
-		int bestScore = -1;
-		for (uint8_t i = 0; i < 5; ++i) {
-			int score = getScore(neighbors[i][0], neighbors[i][1], (t_dir)neighbors[i][2]);
-			if (score > bestScore) {
-				bestScore = score;
-				bestX = neighbors[i][0];
-				bestY = neighbors[i][1];
-			}
-		}
-		if (bestScore == -1) {
-			bestX = SIZE >> 1;
-			bestY = SIZE >> 1;
-			for (int tryY = minIdx; tryY <= maxIdx; ++tryY) {
-				for (int tryX = minIdx; tryX <= maxIdx; ++tryX) {
-					int score = getScore(tryX, tryY, ROCKET);
-					if (score > bestScore) {
-						bestScore = score;
-						bestX = tryX;
-						bestY = tryY;
-					}
-				}
-			}
-		}
+		int bestX = SIZE >> 1;
+		int bestY = SIZE >> 1;
+		getNextMove(x, y, &bestX, &bestY);
 		float targetX = ((float)bestX + 0.5f) * squareSize;
 		float targetY = ((float)bestY + 0.5f) * squareSize;
+		gladiator->log("%.2f %.2f", targetX, targetY);
 		Position goal{targetX, targetY, 0};
 		goTo(myPosition, goal);
 		delay(5);
