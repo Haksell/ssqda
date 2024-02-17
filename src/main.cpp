@@ -186,8 +186,7 @@ void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 			((x - stack[depth - 1][0]) == (stack[depth - 1][0] - stack[depth - 2][0])) &&
 			((y - stack[depth - 1][1]) == (stack[depth - 1][1] - stack[depth - 2][1]));
 		bool goesBack = (depth >= 2) && (x == stack[depth - 2][0]) && (y == stack[depth - 2][1]);
-		int rocketFocus = got_rocket ? 1 : rocketValue;
-		float addScore = paintValue + (possessions[y][x] & 4) * rocketFocus -
+		float addScore = paintValue + (possessions[y][x] & 4) * rocketValue -
 						 0.2 * (dir == ROCKET) + 0.5 * straightPath - 0.5 * goesBack;
 		float newScore = score + addScore * EXPONENTS[depth];
 		uint8_t prev = possessions[y][x];
