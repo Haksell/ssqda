@@ -1,0 +1,11 @@
+.pio
+.vscode
+README.rst
+docs
+examples
+ghost.sh
+images
+libs
+memory.bin
+platformio.ini
+virtuals-*
