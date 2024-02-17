@@ -10,6 +10,8 @@
 // TODO: detect when we have to go through walls
 // TODO: shoot where people will be
 // TODO: if next cell is rocket, shoot
+// TODO: bezier/spline to predict better path
+// TODO: find global variables to reset
 
 #define SIZE 12
 #define DFS_DEPTH 8
@@ -32,7 +34,7 @@ float squareSize = 0.0f;
 
 int** stack;
 uint8_t** possessions;
-// bool** disconnected;
+bool** connectedToCenter;
 
 double reductionAngle(double x) {
 	x = fmod(x + PI, 2 * PI);
@@ -92,6 +94,23 @@ bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
 	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
 }
 
+void dfsFromCenter(int y, int x) {
+	if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx || connectedToCenter[y][x]) return;
+	connectedToCenter[y][x] = true;
+	dfsFromCenter(y + 1, x);
+	dfsFromCenter(y, x + 1);
+	dfsFromCenter(y - 1, x);
+	dfsFromCenter(y, x - 1);
+}
+
+void connectToCenter() {
+	for (int y = 0; y < SIZE; ++y) {
+		for (int x = 0; x < SIZE; ++x) {
+			connectedToCenter[y][x] = false;
+		}
+	}
+	dfsFromCenter(SIZE >> 1, SIZE >> 1);
+}
 
 void reset() {
 	frameCount = 0;
@@ -120,8 +139,11 @@ void setup() {
 	for (size_t i = 0; i < DFS_DEPTH; ++i)
 		stack[i] = (int*)malloc(2 * sizeof(int));
 	possessions = (uint8_t**)malloc(SIZE * sizeof(uint8_t*));
-	for (size_t i = 0; i < SIZE; ++i)
+	connectedToCenter = (bool**)malloc(SIZE * sizeof(bool*));
+	for (size_t i = 0; i < SIZE; ++i) {
 		possessions[i] = (uint8_t*)malloc(SIZE * sizeof(uint8_t));
+		connectedToCenter[i] = (bool*)malloc(SIZE * sizeof(bool));
+	}
 	gladiator = new Gladiator();
 	gladiator->game->onReset(&reset);
 }
@@ -153,7 +175,7 @@ void dfs(size_t depth, float score, float* bestScore, int* bestX, int* bestY) {
 		float paintValue = possessions[y][x] == teamId ? 0.1 : possessions[y][x] == 0 ? 1 : 2;
 		bool isWall = ((dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
 					   (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]));
-		if (isWall) continue;
+		if (isWall && connectedToCenter[stack[depth - 1][1]][stack[depth - 1][0]]) continue;
 		bool straightPath =
 			(depth >= 2) &&
 			((x - stack[depth - 1][0]) == (stack[depth - 1][0] - stack[depth - 2][0])) &&
@@ -200,6 +222,7 @@ void loop() {
 				currentTimeBlock = newTimeBlock;
 				++minIdx;
 				--maxIdx;
+				connectToCenter();
 			}
 		}
 		RobotData myRobot = gladiator->robot->getData();
@@ -212,8 +235,6 @@ void loop() {
 					if (willHit({myRobot.position.x, myRobot.position.y},
 								{other.position.x, other.position.y}, {myRobot.position.a})) {
 						gladiator->weapon->launchRocket();
-						gladiator->log("enemy posx: %f, enemy posx: %f", other.position.x,
-									   other.position.y);
 						break;
 					}
 				}
@@ -227,7 +248,6 @@ void loop() {
 		getNextMove(x, y, &bestX, &bestY);
 		float targetX = ((float)bestX + 0.5f) * squareSize;
 		float targetY = ((float)bestY + 0.5f) * squareSize;
-		// if (frameCount & 15) gladiator->log("%d %d", bestX, bestY);
 		Position goal{targetX, targetY, 0};
 		goTo(myPosition, goal);
 		delay(5);
