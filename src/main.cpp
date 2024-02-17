@@ -5,6 +5,7 @@
 
 // TODO: all pairs shortest path
 // TODO: use previous wheel speed and update
+// TODO: go backwards when appropriate
 
 #define SIZE 12
 #define GOTO_ANGLE 0.2
@@ -74,13 +75,14 @@ void goTo(Position fromPos, Position toPos) {
 	if (d > epsilon) {
 		double rho = atan2(dy, dx);
 		double angle = reductionAngle(rho - fromPos.a);
-		double consw = clamp(8 * angle, -wlimit, wlimit);
-		double consv = clamp(d * cos(angle), -vlimit, vlimit);
-		consvl = clamp(consv - consw, -1.0, 1.0);
-		consvr = clamp(consv + consw, -1.0, 1.0);
+		double consw = clamp(angle, -wlimit, wlimit);
+		double consv = clamp(clamp(d, 0.3, 3) * cos(angle), -vlimit, vlimit);
+		double speedLimit = gladiator->robot->getData().speedLimit;
+		consvl = clamp(consv - consw, -1.0, 1.0) * speedLimit;
+		consvr = clamp(consv + consw, -1.0, 1.0) * speedLimit;
 	} else {
-		consvl = 0;
-		consvr = 0;
+		consvl = 0.0;
+		consvr = 0.0;
 	}
 	gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
 	gladiator->control->setWheelSpeed(WheelAxis::LEFT, consvl, false);
@@ -128,7 +130,6 @@ void loop() {
 		}
 		++frameCount;
 		if ((frameCount & 63) == 0) {
-			// gladiator->log("%lf", gladiator->robot->getData().speedLimit); // TODO: use
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			auto deltaTime =
 				std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime)
