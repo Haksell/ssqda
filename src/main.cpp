@@ -9,6 +9,7 @@
 // TODO: bezier/spline to predict better path
 // TODO: find global variables to reset
 // TODO: escape rockets
+// TODO: penalize close section to close section through walls
 
 // TODO: preshot where people will be
 // TODO: snipe
@@ -65,6 +66,21 @@ double calculateAngleToTarget(const Position& from, const Position& to) {
 
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
 
+bool isSpeedLimited() { return gladiator->robot->getData().speedLimit < 0.3; }
+
+bool shouldLaunchRocket() { return gladiator->weapon->canLaunchRocket() && opponentsAlive > 0; }
+
+bool isRealRobotData(const RobotData& robotData) { return robotData.macAddress == MAC_0; }
+
+bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
+	double maxRange = 4.5 * squareSize;
+	double distanceToEnemy = calculateDistance(myPos, enemyPos);
+	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
+	if (distanceToEnemy > maxRange) return false;
+	double angleDifference = reduceAngle(myAngle - angleToEnemy);
+	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
+}
+
 void goTo(Position fromPos, Position toPos) {
 	static const float wlimit = 0.4;
 	static const float vlimit = 0.7;
@@ -97,15 +113,6 @@ void goTo(Position fromPos, Position toPos) {
 	gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
 }
 
-bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
-	double maxRange = 4.5 * squareSize;
-	double distanceToEnemy = calculateDistance(myPos, enemyPos);
-	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
-	if (distanceToEnemy > maxRange) return false;
-	double angleDifference = reduceAngle(myAngle - angleToEnemy);
-	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
-}
-
 void dfsFromCenter(int y, int x) {
 	if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx || connectedToCenter[y][x]) return;
 	connectedToCenter[y][x] = true;
@@ -122,39 +129,6 @@ void connectToCenter() {
 		}
 	}
 	dfsFromCenter(SIZE >> 1, SIZE >> 1);
-}
-
-void reset() {
-	frameCount = 0;
-	currentTimeBlock = 0;
-	minIdx = 0;
-	maxIdx = SIZE - 1;
-	opponentsAlive = 2;
-	robotsAlive = 4;
-	goalX = SIZE >> 1;
-	goalY = SIZE >> 1;
-	startTime = std::chrono::high_resolution_clock::now();
-	squareSize = gladiator->maze->getSquareSize();
-	teamId = gladiator->robot->getData().teamId;
-	goalPos = {0.0, 0.0, 0.0};
-	for (int y = 0; y < SIZE; ++y) {
-		for (int x = 0; x < SIZE; ++x) {
-			const MazeSquare* mazeSquare = gladiator->maze->getSquare(x, y);
-			maze[y][x][NORTH] = !!mazeSquare->northSquare;
-			maze[y][x][EAST] = !!mazeSquare->eastSquare;
-			maze[y][x][SOUTH] = !!mazeSquare->southSquare;
-			maze[y][x][WEST] = !!mazeSquare->westSquare;
-			rockets[y][x] = mazeSquare->coin.value;
-		}
-	}
-	connectToCenter();
-}
-
-void setup() {
-	for (size_t i = 1; i < DFS_DEPTH; ++i)
-		EXPONENTS[i] = EXPONENTS[i - 1] * EXPONENTIONAL_EXPONENT;
-	gladiator = new Gladiator();
-	gladiator->game->onReset(&reset);
 }
 
 void dfsGoal(size_t depth, float score, float* bestScore) {
@@ -245,53 +219,87 @@ void updateGlobals() {
 	}
 }
 
-void loop() {
-	if (gladiator->game->isStarted() && gladiator->robot->getData().lifes) {
-		updateGlobals();
-		RobotData myRobot = gladiator->robot->getData();
-		if (frameCount == 0) delay(500);
-		++frameCount;
-		if ((frameCount & 63) == 0) {
-			auto currentTime = std::chrono::high_resolution_clock::now();
-			auto deltaTime =
-				std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime)
-					.count();
-			int newTimeBlock = (deltaTime + 3000) / 20000;
-			if (newTimeBlock != currentTimeBlock) {
-				currentTimeBlock = newTimeBlock;
-				++minIdx;
-				--maxIdx;
-				connectToCenter();
-			}
+void tryLaunchingRockets(const RobotData& myRobot) {
+	RobotList allBots = gladiator->game->getPlayingRobotsId();
+	for (int i = 0; i < 4; i++) {
+		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
+		if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 &&
+			other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0 &&
+			willHit({myRobot.position.x, myRobot.position.y}, {other.position.x, other.position.y},
+					{myRobot.position.a})) {
+			gladiator->weapon->launchRocket();
+			return;
 		}
-		if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0) {
-			RobotList allBots = gladiator->game->getPlayingRobotsId();
-			for (int i = 0; i < 4; i++) {
-				RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
-				if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 &&
-					other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0) {
-					if (willHit({myRobot.position.x, myRobot.position.y},
-								{other.position.x, other.position.y}, {myRobot.position.a})) {
-						gladiator->weapon->launchRocket();
-						break;
-					}
-				}
-			}
-		}
-		Position myPosition = gladiator->robot->getData().position;
-		if ((frameCount & 15) == 0 || (myPosition.x == goalX && myPosition.y == goalY &&
-									   possessions[goalY][goalX] == teamId)) {
-			int x = (int)(myPosition.x / squareSize);
-			int y = (int)(myPosition.y / squareSize);
-			goalX = SIZE >> 1;
-			goalY = SIZE >> 1;
-			updateGoal(x, y);
-			goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0};
-			if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0 &&
-				rockets[goalY][goalX] && (goalX != myPosition.x || goalY != myPosition.y))
-				gladiator->weapon->launchRocket();
-		}
-		goTo(myPosition, goalPos);
-		delay(5);
 	}
+}
+
+void checkTime() {
+	auto currentTime = std::chrono::high_resolution_clock::now();
+	auto deltaTime =
+		std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count();
+	int newTimeBlock = (deltaTime + 3000) / 20000;
+	if (newTimeBlock != currentTimeBlock) {
+		currentTimeBlock = newTimeBlock;
+		++minIdx;
+		--maxIdx;
+		connectToCenter();
+	}
+}
+
+void reset() {
+	frameCount = 0;
+	currentTimeBlock = 0;
+	minIdx = 0;
+	maxIdx = SIZE - 1;
+	opponentsAlive = 2;
+	robotsAlive = 4;
+	goalX = SIZE >> 1;
+	goalY = SIZE >> 1;
+	startTime = std::chrono::high_resolution_clock::now();
+	squareSize = gladiator->maze->getSquareSize();
+	teamId = gladiator->robot->getData().teamId;
+	goalPos = {0.0, 0.0, 0.0};
+	for (int y = 0; y < SIZE; ++y) {
+		for (int x = 0; x < SIZE; ++x) {
+			const MazeSquare* mazeSquare = gladiator->maze->getSquare(x, y);
+			maze[y][x][NORTH] = !!mazeSquare->northSquare;
+			maze[y][x][EAST] = !!mazeSquare->eastSquare;
+			maze[y][x][SOUTH] = !!mazeSquare->southSquare;
+			maze[y][x][WEST] = !!mazeSquare->westSquare;
+			rockets[y][x] = mazeSquare->coin.value;
+		}
+	}
+	connectToCenter();
+}
+
+void setup() {
+	for (size_t i = 1; i < DFS_DEPTH; ++i)
+		EXPONENTS[i] = EXPONENTS[i - 1] * EXPONENTIONAL_EXPONENT;
+	gladiator = new Gladiator();
+	gladiator->game->onReset(&reset);
+}
+
+void loop() {
+	if (!gladiator->game->isStarted() || gladiator->robot->getData().lifes == 0) return;
+	updateGlobals();
+	RobotData myRobot = gladiator->robot->getData();
+	if (frameCount == 0) delay(500);
+	if ((frameCount & 63) == 0) checkTime();
+	if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0) tryLaunchingRockets(myRobot);
+	Position myPosition = gladiator->robot->getData().position;
+	if ((frameCount & 15) == 0 ||
+		(myPosition.x == goalX && myPosition.y == goalY && possessions[goalY][goalX] == teamId)) {
+		int x = (int)(myPosition.x / squareSize);
+		int y = (int)(myPosition.y / squareSize);
+		goalX = SIZE >> 1;
+		goalY = SIZE >> 1;
+		updateGoal(x, y);
+		goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0};
+		if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0 && rockets[goalY][goalX] &&
+			(goalX != myPosition.x || goalY != myPosition.y))
+			gladiator->weapon->launchRocket();
+	}
+	goTo(myPosition, goalPos);
+	++frameCount;
+	delay(5);
 }
