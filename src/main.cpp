@@ -198,7 +198,25 @@ void updateGoal(const Position& myPosition) {
 	float bestScore = 0.0;
 	nextIsRocket = false;
 	dfsGoal(1, 0.0, &bestScore, false);
-	goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0.0};
+	float insideX = goalX == 0 ? 0.6 : goalX == SIZE - 1 ? 0.4 : 0.5;
+	float insideY = goalY == 0 ? 0.6 : goalY == SIZE - 1 ? 0.4 : 0.5;
+	if (x == minIdx && y == minIdx) {
+		insideX = 0.6;
+		insideY = 0.6;
+	}
+	if (x == minIdx && y == maxIdx) {
+		insideX = 0.6;
+		insideY = 0.4;
+	}
+	if (x == maxIdx && y == minIdx) {
+		insideX = 0.4;
+		insideY = 0.6;
+	}
+	if (x == maxIdx && y == maxIdx) {
+		insideX = 0.4;
+		insideY = 0.4;
+	}
+	goalPos = {((float)goalX + insideX) * squareSize, ((float)goalY + insideY) * squareSize, 0.0};
 }
 
 void updateGlobals() {
