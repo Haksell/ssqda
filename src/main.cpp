@@ -10,6 +10,7 @@
 #define M_TAU 6.283185307179586
 #define EXPONENTIONAL_EXPONENT 0.9
 #define MAC_0 "00:00:00:00:00:00"
+#define SQRT2 1.4142135623730951
 
 constexpr int TEAM_ROBOTS = 2;
 constexpr int TOTAL_ROBOTS = TEAM_ROBOTS << 1;
@@ -36,7 +37,8 @@ int minIdx = 0;
 int maxIdx = SIZE - 1;
 int goalX = SIZE >> 1;
 int goalY = SIZE >> 1;
-Position goalPos{0.0, 0.0, 0.0};
+Position goalPos{};
+Position alliedPos{};
 bool nextIsRocket = false;
 
 double reduceAngle(double x) {
@@ -120,6 +122,10 @@ void connectToCenter() {
 	dfsFromCenter(SIZE >> 1, SIZE >> 1);
 }
 
+Position computeRealPosition(int x, int y, float insideX, float insideY) {
+	return {((float)x + insideX) * squareSize, ((float)y + insideY) * squareSize, 0.0};
+}
+
 void dfsGoal(size_t depth, float score, float* bestScore, bool isRocket) {
 	if (score > *bestScore) {
 		*bestScore = score;
@@ -174,7 +180,10 @@ void dfsGoal(size_t depth, float score, float* bestScore, bool isRocket) {
 							  : (dir == ROCKET)							 ? STATIC
 																		 : SIDE;
 		float momentumValue = momentum == FORWARD ? 1.0 : momentum == SIDE ? 0.5 : 0.0;
-		float addScore = paintValue + rockets[y][x] * rocketValue + momentumValue;
+		float alliedDist = calculateDistance(computeRealPosition(x, y, 0.5, 0.5), alliedPos);
+		float alliedAvoidanceValue = std::sqrt(alliedDist) * 1.0;
+		float addScore =
+			paintValue + rockets[y][x] * rocketValue + momentumValue + alliedAvoidanceValue;
 		float newScore = score + addScore * EXPONENTS[depth];
 		uint8_t prevPossession = possessions[y][x];
 		bool prevRocket = rockets[y][x];
@@ -216,19 +225,21 @@ void updateGoal(const Position& myPosition) {
 		insideX = 0.4;
 		insideY = 0.4;
 	}
-	goalPos = {((float)goalX + insideX) * squareSize, ((float)goalY + insideY) * squareSize, 0.0};
+	goalPos = computeRealPosition(goalX, goalY, insideX, insideY);
 }
 
 void updateGlobals() {
+	RobotData myRobot = gladiator->robot->getData();
 	RobotList allBots = gladiator->game->getPlayingRobotsId();
 	int newRobotsAlive = 0;
 	opponentsAlive = 0;
-	for (int i = 0; i < 4; i++) {
+	for (int i = 0; i < TOTAL_ROBOTS; ++i) {
 		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
 		if (!isRealRobotData(other)) continue;
-		int y = (int)(other.position.y / squareSize);
 		int x = (int)(other.position.x / squareSize);
-		if (!other.lifes) {
+		int y = (int)(other.position.y / squareSize);
+		if (other.teamId == teamId && other.id != myRobot.id) alliedPos = other.position;
+		if (other.lifes == 0) {
 			maze[y][x][NORTH] = false;
 			maze[y][x][EAST] = false;
 			maze[y][x][SOUTH] = false;
