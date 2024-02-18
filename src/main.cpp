@@ -54,14 +54,14 @@ double reduceAngle(double x) {
 	return x - M_PI;
 }
 
-double calculateDistance(const Position& myPos, const Position& enemyPos) {
-	return std::sqrt(std::pow(enemyPos.x - myPos.x, 2) + std::pow(enemyPos.y - myPos.y, 2));
+double calculateDistance(const Position& from, const Position& to) {
+	double dx = to.x - from.x;
+	double dy = to.y - from.y;
+	return std::sqrt(dx * dx + dy * dy);
 }
 
 double calculateAngleToTarget(const Position& from, const Position& to) {
-	double dy = to.y - from.y;
-	double dx = to.x - from.x;
-	return atan2(dy, dx);
+	return atan2(to.y - from.y, to.x - from.x);
 }
 
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
@@ -72,12 +72,12 @@ bool shouldLaunchRocket() { return gladiator->weapon->canLaunchRocket() && oppon
 
 bool isRealRobotData(const RobotData& robotData) { return robotData.macAddress == MAC_0; }
 
-bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
+bool willHit(const Position& myPos, const Position& enemyPos) {
 	double maxRange = 4.5 * squareSize;
 	double distanceToEnemy = calculateDistance(myPos, enemyPos);
 	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
 	if (distanceToEnemy > maxRange) return false;
-	double angleDifference = reduceAngle(myAngle - angleToEnemy);
+	double angleDifference = reduceAngle(myPos.a - angleToEnemy);
 	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
 }
 
@@ -225,8 +225,7 @@ void tryLaunchingRockets(const RobotData& myRobot) {
 		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
 		if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 &&
 			other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0 &&
-			willHit({myRobot.position.x, myRobot.position.y}, {other.position.x, other.position.y},
-					{myRobot.position.a})) {
+			willHit(myRobot.position, other.position)) {
 			gladiator->weapon->launchRocket();
 			return;
 		}
