@@ -253,11 +253,10 @@ void loop() {
 		updateMaze();
 		RobotData myRobot = gladiator->robot->getData();
 		if (frameCount == 0) {
-			delay(69); // TODO 500
+			delay(500); // TODO 500
 		}
 		++frameCount;
 		if ((frameCount & 63) == 0) {
-			gladiator->log("%d", opponentsAlive);
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			auto deltaTime =
 				std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime)
