@@ -97,7 +97,6 @@ void goTo(const Position& fromPos, const Position& toPos) {
 		double consv = clamp(clamp(d, 0.33, 1.5) * std::max(0.0, cos(angle)), -vlimit, vlimit);
 		consvl = clamp(consv - consw, -1.0, 1.0);
 		consvr = clamp(consv + consw, -1.0, 1.0);
-		gladiator->log("%.3f %.3f", consv, consw);
 		if (isSpeedLimited()) {
 			double factor = gladiator->robot->getData().speedLimit /
 							std::max(0.1, std::max(std::abs(consvl), std::abs(consvr)));
@@ -147,7 +146,7 @@ void dfsGoal(size_t depth, float score, float* bestScore) {
 		}
 	}
 	if (depth == DFS_DEPTH) return;
-	float rocketValue = (gladiator->weapon->canLaunchRocket() ? 1.2 : 3.0) * opponentsAlive;
+	float rocketValue = (shouldLaunchRocket() ? 1.2 : 3.0) * opponentsAlive;
 	for (size_t i = 0; i < 5; ++i) {
 		t_dir dir = (t_dir)neighbors[i][2];
 		if (depth != 1 && dir == ROCKET) continue;
@@ -175,11 +174,16 @@ void dfsGoal(size_t depth, float score, float* bestScore) {
 	}
 }
 
-void updateGoal(int x, int y) {
+void updateGoal(const Position& myPosition) {
+	int x = (int)(myPosition.x / squareSize);
+	int y = (int)(myPosition.y / squareSize);
+	goalX = SIZE >> 1;
+	goalY = SIZE >> 1;
 	stack[0][0] = x;
 	stack[0][1] = y;
 	float bestScore = 0.0f;
 	dfsGoal(1, 0, &bestScore);
+	goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0};
 }
 
 void updateGlobals() {
@@ -220,7 +224,7 @@ void updateGlobals() {
 
 void tryLaunchingRockets(const RobotData& myRobot) {
 	RobotList allBots = gladiator->game->getPlayingRobotsId();
-	for (int i = 0; i < 4; i++) {
+	for (int i = 0; i < TOTAL_ROBOTS; i++) {
 		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
 		if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 &&
 			other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0 &&
@@ -278,22 +282,17 @@ void setup() {
 }
 
 void loop() {
-	if (!gladiator->game->isStarted() || gladiator->robot->getData().lifes == 0) return;
-	updateGlobals();
 	RobotData myRobot = gladiator->robot->getData();
+	if (!gladiator->game->isStarted() || myRobot.lifes == 0) return;
+	updateGlobals();
+	Position myPosition = gladiator->robot->getData().position;
 	if (frameCount == 0) delay(500);
 	if ((frameCount & 63) == 0) checkTime();
-	if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0) tryLaunchingRockets(myRobot);
-	Position myPosition = gladiator->robot->getData().position;
+	if (shouldLaunchRocket()) tryLaunchingRockets(myRobot);
 	if ((frameCount & 15) == 0 ||
 		(myPosition.x == goalX && myPosition.y == goalY && possessions[goalY][goalX] == teamId)) {
-		int x = (int)(myPosition.x / squareSize);
-		int y = (int)(myPosition.y / squareSize);
-		goalX = SIZE >> 1;
-		goalY = SIZE >> 1;
-		updateGoal(x, y);
-		goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0};
-		if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0 && rockets[goalY][goalX] &&
+		updateGoal(myPosition);
+		if (shouldLaunchRocket() && rockets[goalY][goalX] &&
 			(goalX != myPosition.x || goalY != myPosition.y))
 			gladiator->weapon->launchRocket();
 	}
