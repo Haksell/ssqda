@@ -2,19 +2,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+
 #undef abs
-
-// TODO: use previous wheel speed and update
-// TODO: go backwards when appropriate
-// TODO: bezier/spline to predict better path
-// TODO: find global variables to reset
-// TODO: escape rockets
-
-// TODO: preshot where people will be
-// TODO: snipe
-// TODO: reduce launch angle
-
-// TODO: commit suicide if score > opponent and all opponents dead
 
 #define SIZE 12
 #define DFS_DEPTH 9
@@ -29,16 +18,6 @@ float EXPONENTS[DFS_DEPTH] = {1.0};
 
 typedef enum e_dir { NORTH = 0, EAST, SOUTH, WEST, ROCKET } t_dir;
 typedef enum e_momentum { FORWARD = 0, BACKWARD, STATIC, SIDE } t_momentum;
-
-struct Velocity {
-	int id;
-	Position lastPos;
-	std::chrono::high_resolution_clock::time_point firstTime;
-	Position newPos;
-	std::chrono::high_resolution_clock::time_point lastTime;
-};
-
-Velocity enemyVelocity[TEAM_ROBOTS];
 
 Gladiator* gladiator;
 bool maze[SIZE][SIZE][4];
@@ -58,6 +37,7 @@ int maxIdx = SIZE - 1;
 int goalX = SIZE >> 1;
 int goalY = SIZE >> 1;
 Position goalPos{0.0, 0.0, 0.0};
+bool nextIsRocket = false;
 
 double reduceAngle(double x) {
 	x = fmod(x + M_PI, M_TAU);
@@ -75,10 +55,6 @@ double calculateAngleToTarget(const Position& from, const Position& to) {
 	return atan2(to.y - from.y, to.x - from.x);
 }
 
-double calculateSpeed(const Position& lastPos, const Position& newPos, double deltaTime) {
-	return calculateDistance(lastPos, newPos) / deltaTime; // TODO simplify
-}
-
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
 
 bool isSpeedLimited() { return gladiator->robot->getData().speedLimit < 0.3; }
@@ -87,41 +63,13 @@ bool shouldLaunchRocket() { return gladiator->weapon->canLaunchRocket() && oppon
 
 bool isRealRobotData(const RobotData& robotData) { return robotData.macAddress != MAC_0; }
 
-Position predictFuturePosition(Position currentPosition, double speed, double angle,
-							   double deltaTimeSec) {
-	static const float preshotFactor = 0.5;
-	float displacementX = speed * cos(angle) * deltaTimeSec * preshotFactor;
-	float displacementY = speed * sin(angle) * deltaTimeSec * preshotFactor;
-	float futureX = currentPosition.x + displacementX;
-	float futureY = currentPosition.y + displacementY;
-	return {futureX, futureY};
-}
-
-bool willHit(const Position& myPos) {
-	for (int i = 0; i < 2; ++i) {
-		if (gladiator->game->getOtherRobotData(enemyVelocity[i].id).macAddress == MAC_0) continue;
-		double maxRange = 5.0 * squareSize;
-		auto deltaTime = std::chrono::duration_cast<std::chrono::milliseconds>(
-							 enemyVelocity[i].lastTime - enemyVelocity[i].firstTime)
-							 .count() /
-						 1000;
-		double speed = calculateSpeed(enemyVelocity[i].lastPos, enemyVelocity[i].newPos, deltaTime);
-		double distanceToEnemy =
-			calculateDistance(myPos, enemyVelocity[i].newPos); // TODO: check in loop instead
-		double enemyAngle =
-			calculateAngleToTarget(enemyVelocity[i].lastPos, enemyVelocity[i].newPos);
-		if (distanceToEnemy > maxRange) continue;
-		auto enemyFuturePosition =
-			predictFuturePosition(enemyVelocity[i].newPos, speed, enemyAngle, deltaTime);
-		for (double time = 0; time <= 4.0; time += 0.01) {
-			Position rocketPosAtTime = predictFuturePosition(myPos, 0.5, myPos.a, time);
-			double distance = calculateDistance(enemyFuturePosition, rocketPosAtTime);
-			if (distance <= 0.2) {
-				return true;
-			}
-		}
-	}
-	return false;
+bool willHit(const Position& myPos, const Position& enemyPos) {
+	double maxRange = 4.5 * squareSize;
+	double distanceToEnemy = calculateDistance(myPos, enemyPos);
+	if (distanceToEnemy > maxRange) return false;
+	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
+	double angleDifference = reduceAngle(myPos.a - angleToEnemy);
+	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
 }
 
 void goTo(const Position& fromPos, const Position& toPos) {
@@ -137,7 +85,7 @@ void goTo(const Position& fromPos, const Position& toPos) {
 		double rho = atan2(dy, dx);
 		double angle = reduceAngle(rho - fromPos.a);
 		double consw = clamp(angle, -wlimit, wlimit);
-		double consv = clamp(clamp(d, 0.33, 1.5) * std::max(0.0, cos(angle)), -vlimit, vlimit);
+		double consv = clamp(clamp(d, 0.33, 1.0) * std::max(0.0, cos(angle)), -vlimit, vlimit);
 		consvl = clamp(consv - consw, -1.0, 1.0);
 		consvr = clamp(consv + consw, -1.0, 1.0);
 		if (isSpeedLimited()) {
@@ -172,11 +120,12 @@ void connectToCenter() {
 	dfsFromCenter(SIZE >> 1, SIZE >> 1);
 }
 
-void dfsGoal(size_t depth, float score, float* bestScore) {
+void dfsGoal(size_t depth, float score, float* bestScore, bool isRocket) {
 	if (score > *bestScore) {
 		*bestScore = score;
 		goalX = stack[1][0];
 		goalY = stack[1][1];
+		nextIsRocket = isRocket;
 		if (!isSpeedLimited()) {
 			int dx = stack[1][0] - stack[0][0];
 			int dy = stack[1][1] - stack[0][1];
@@ -224,7 +173,7 @@ void dfsGoal(size_t depth, float score, float* bestScore) {
 							  : (newDx == -prevDx) && (newDy == -prevDy) ? BACKWARD
 							  : (dir == ROCKET)							 ? STATIC
 																		 : SIDE;
-		float momentumValue = momentum == FORWARD ? 0.6 : momentum == SIDE ? 0.2 : 0.0;
+		float momentumValue = momentum == FORWARD ? 1.0 : momentum == SIDE ? 0.5 : 0.0;
 		float addScore = paintValue + rockets[y][x] * rocketValue + momentumValue;
 		float newScore = score + addScore * EXPONENTS[depth];
 		uint8_t prevPossession = possessions[y][x];
@@ -233,7 +182,7 @@ void dfsGoal(size_t depth, float score, float* bestScore) {
 		rockets[y][x] = false;
 		stack[depth][0] = x;
 		stack[depth][1] = y;
-		dfsGoal(depth + 1, newScore, bestScore);
+		dfsGoal(depth + 1, newScore, bestScore, depth == 1 ? prevRocket : isRocket);
 		possessions[y][x] = prevPossession;
 		rockets[y][x] = prevRocket;
 	}
@@ -247,7 +196,8 @@ void updateGoal(const Position& myPosition) {
 	stack[0][0] = x;
 	stack[0][1] = y;
 	float bestScore = 0.0;
-	dfsGoal(1, 0.0, &bestScore);
+	nextIsRocket = false;
+	dfsGoal(1, 0.0, &bestScore, false);
 	goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0.0};
 }
 
@@ -287,6 +237,19 @@ void updateGlobals() {
 	}
 }
 
+void tryLaunchingRockets(const RobotData& myRobot) {
+	RobotList allBots = gladiator->game->getPlayingRobotsId();
+	for (int i = 0; i < TOTAL_ROBOTS; i++) {
+		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
+		if (isRealRobotData(other) && other.teamId != myRobot.teamId && other.lifes &&
+			other.position.x > 0 && other.position.y > 0 && myRobot.position.x > 0 &&
+			myRobot.position.y > 0 && willHit(myRobot.position, other.position)) {
+			gladiator->weapon->launchRocket();
+			return;
+		}
+	}
+}
+
 void checkTime() {
 	auto currentTime = std::chrono::high_resolution_clock::now();
 	auto deltaTime =
@@ -297,44 +260,6 @@ void checkTime() {
 		++minIdx;
 		--maxIdx;
 		connectToCenter();
-	}
-}
-
-void createVelocity() {
-	RobotList allBots = gladiator->game->getPlayingRobotsId();
-	int o = 0;
-	for (int i = 0; i < 4; i++) {
-		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
-		if (other.macAddress == MAC_0) continue;
-		if (other.teamId != gladiator->robot->getData().teamId) {
-			enemyVelocity[o].id = other.id;
-			enemyVelocity[o].lastPos.x = other.position.x;
-			enemyVelocity[o].lastPos.y = other.position.y;
-			enemyVelocity[o].newPos.x = other.position.x;
-			enemyVelocity[o].newPos.y = other.position.y;
-			enemyVelocity[o].firstTime = std::chrono::high_resolution_clock::now();
-			enemyVelocity[o].lastTime = std::chrono::high_resolution_clock::now();
-			o++;
-		}
-	}
-}
-
-void updateVelocity() {
-	RobotList allBots = gladiator->game->getPlayingRobotsId();
-	int o = 0;
-	for (int i = 0; i < 4; i++) {
-		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
-		if (other.macAddress == MAC_0) continue;
-		if (other.teamId != gladiator->robot->getData().teamId) {
-			enemyVelocity[o].id = other.id;
-			enemyVelocity[o].lastPos.x = enemyVelocity[o].newPos.x;
-			enemyVelocity[o].lastPos.y = enemyVelocity[o].newPos.y;
-			enemyVelocity[o].firstTime = enemyVelocity[o].lastTime;
-			enemyVelocity[o].newPos.x = other.position.x;
-			enemyVelocity[o].newPos.y = other.position.y;
-			enemyVelocity[o].lastTime = std::chrono::high_resolution_clock::now();
-			o++;
-		}
 	}
 }
 
@@ -352,6 +277,7 @@ void reset() {
 	goalY = SIZE >> 1;
 	startTime = std::chrono::high_resolution_clock::now();
 	teamId = gladiator->robot->getData().teamId;
+	nextIsRocket = false;
 	for (int y = 0; y < SIZE; ++y) {
 		for (int x = 0; x < SIZE; ++x) {
 			const MazeSquare* mazeSquare = gladiator->maze->getSquare(x, y);
@@ -362,7 +288,6 @@ void reset() {
 			rockets[y][x] = mazeSquare->coin.value;
 		}
 	}
-	createVelocity();
 	connectToCenter();
 }
 
@@ -380,12 +305,11 @@ void loop() {
 	Position myPosition = gladiator->robot->getData().position;
 	if (frameCount == 0) delay(500);
 	if ((frameCount & 63) == 0) checkTime();
-	if ((frameCount % 333) == 0) updateVelocity();
-	if (shouldLaunchRocket() && willHit(myRobot.position)) gladiator->weapon->launchRocket();
+	if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0) tryLaunchingRockets(myRobot);
 	if ((frameCount & 15) == 0 ||
 		(myPosition.x == goalX && myPosition.y == goalY && possessions[goalY][goalX] == teamId)) {
 		updateGoal(myPosition);
-		if (shouldLaunchRocket() && rockets[goalY][goalX]) gladiator->weapon->launchRocket();
+		if (shouldLaunchRocket() && nextIsRocket) gladiator->weapon->launchRocket();
 	}
 	goTo(myPosition, goalPos);
 	++frameCount;
