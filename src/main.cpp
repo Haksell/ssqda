@@ -43,8 +43,9 @@ int robotsAlive = TOTAL_ROBOTS;
 int opponentsAlive = TEAM_ROBOTS;
 int minIdx = 0;
 int maxIdx = SIZE - 1;
-int bestX = SIZE >> 1;
-int bestY = SIZE >> 1;
+int goalX = SIZE >> 1;
+int goalY = SIZE >> 1;
+Position goalPos{0.0, 0.0, 0.0};
 
 double reduceAngle(double x) {
 	x = fmod(x + M_PI, M_TAU);
@@ -130,11 +131,12 @@ void reset() {
 	maxIdx = SIZE - 1;
 	opponentsAlive = 2;
 	robotsAlive = 4;
-	bestX = SIZE >> 1;
-	bestY = SIZE >> 1;
+	goalX = SIZE >> 1;
+	goalY = SIZE >> 1;
 	startTime = std::chrono::high_resolution_clock::now();
 	squareSize = gladiator->maze->getSquareSize();
 	teamId = gladiator->robot->getData().teamId;
+	goalPos = {0.0, 0.0, 0.0};
 	for (int y = 0; y < SIZE; ++y) {
 		for (int x = 0; x < SIZE; ++x) {
 			const MazeSquare* mazeSquare = gladiator->maze->getSquare(x, y);
@@ -155,7 +157,7 @@ void setup() {
 	gladiator->game->onReset(&reset);
 }
 
-void dfs(size_t depth, float score, float* bestScore) {
+void dfsGoal(size_t depth, float score, float* bestScore) {
 	static const int neighbors[5][3] = {
 		{0, 0, ROCKET}, {0, 1, NORTH}, {1, 0, EAST}, {0, -1, SOUTH}, {-1, 0, WEST},
 	};
@@ -163,12 +165,12 @@ void dfs(size_t depth, float score, float* bestScore) {
 		*bestScore = score;
 		int dx = stack[1][0] - stack[0][0];
 		int dy = stack[1][1] - stack[0][1];
-		bestX = stack[1][0];
-		bestY = stack[1][1];
+		goalX = stack[1][0];
+		goalY = stack[1][1];
 		for (size_t i = 2; i < depth; ++i) {
 			if (stack[i][0] - stack[i - 1][0] != dx || stack[i][1] - stack[i - 1][1] != dy) break;
-			bestX = stack[i][0];
-			bestY = stack[i][1];
+			goalX = stack[i][0];
+			goalY = stack[i][1];
 		}
 	}
 	if (depth == DFS_DEPTH) return;
@@ -195,16 +197,16 @@ void dfs(size_t depth, float score, float* bestScore) {
 		possessions[y][x] = teamId;
 		stack[depth][0] = x;
 		stack[depth][1] = y;
-		dfs(depth + 1, newScore, bestScore);
+		dfsGoal(depth + 1, newScore, bestScore);
 		possessions[y][x] = prev;
 	}
 }
 
-void getNextMove(int x, int y) {
+void updateGoal(int x, int y) {
 	stack[0][0] = x;
 	stack[0][1] = y;
 	float bestScore = 0.0f;
-	dfs(1, 0, &bestScore);
+	dfsGoal(1, 0, &bestScore);
 }
 
 void updateGlobals() {
@@ -243,10 +245,6 @@ void updateGlobals() {
 	}
 }
 
-float targetX = 0.0f;
-float targetY = 0.0f;
-Position goal{targetX, targetY, 0};
-
 void loop() {
 	if (gladiator->game->isStarted() && gladiator->robot->getData().lifes) {
 		updateGlobals();
@@ -281,19 +279,19 @@ void loop() {
 			}
 		}
 		Position myPosition = gladiator->robot->getData().position;
-		if ((frameCount & 15) == 0 || (myPosition.x == bestX && myPosition.y == bestY &&
-									   possessions[bestY][bestX] == teamId)) {
+		if ((frameCount & 15) == 0 || (myPosition.x == goalX && myPosition.y == goalY &&
+									   possessions[goalY][goalX] == teamId)) {
 			int x = (int)(myPosition.x / squareSize);
 			int y = (int)(myPosition.y / squareSize);
-			bestX = SIZE >> 1;
-			bestY = SIZE >> 1;
-			getNextMove(x, y);
-			goal = {((float)bestX + 0.5f) * squareSize, ((float)bestY + 0.5f) * squareSize, 0};
+			goalX = SIZE >> 1;
+			goalY = SIZE >> 1;
+			updateGoal(x, y);
+			goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0};
 			if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0 &&
-				rockets[bestY][bestX] && (bestX != myPosition.x || bestY != myPosition.y))
+				rockets[goalY][goalX] && (goalX != myPosition.x || goalY != myPosition.y))
 				gladiator->weapon->launchRocket();
 		}
-		goTo(myPosition, goal);
+		goTo(myPosition, goalPos);
 		delay(5);
 	}
 }
