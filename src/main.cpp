@@ -75,13 +75,13 @@ bool isRealRobotData(const RobotData& robotData) { return robotData.macAddress =
 bool willHit(const Position& myPos, const Position& enemyPos) {
 	double maxRange = 4.5 * squareSize;
 	double distanceToEnemy = calculateDistance(myPos, enemyPos);
-	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
 	if (distanceToEnemy > maxRange) return false;
+	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
 	double angleDifference = reduceAngle(myPos.a - angleToEnemy);
 	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
 }
 
-void goTo(Position fromPos, Position toPos) {
+void goTo(const Position& fromPos, const Position& toPos) {
 	static const float wlimit = 0.4;
 	static const float vlimit = 0.7;
 	static const float epsilon = 0.07;
@@ -98,10 +98,9 @@ void goTo(Position fromPos, Position toPos) {
 		consvl = clamp(consv - consw, -1.0, 1.0);
 		consvr = clamp(consv + consw, -1.0, 1.0);
 		gladiator->log("%.3f %.3f", consv, consw);
-		double speedLimit = gladiator->robot->getData().speedLimit;
-		if (speedLimit < 0.3) {
-			double factor =
-				speedLimit / std::max(0.1, std::max(std::abs(consvl), std::abs(consvr)));
+		if (isSpeedLimited()) {
+			double factor = gladiator->robot->getData().speedLimit /
+							std::max(0.1, std::max(std::abs(consvl), std::abs(consvr)));
 			consvl *= factor;
 			consvr *= factor;
 		}
