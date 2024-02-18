@@ -120,12 +120,56 @@ void connectToCenter() {
 	dfsFromCenter(SIZE >> 1, SIZE >> 1);
 }
 
+void setMiddleGoalPos() {
+	float middle = (SIZE - 1.0) * 0.5 * squareSize;
+	goalPos = {middle, middle, 0.0};
+}
+
+Position computePrecisePosition(float insideX, float insideY) {
+	return {((float)goalX + insideX) * squareSize, ((float)goalY + insideY) * squareSize, 0.0};
+}
+
+t_dir getDirection(int dx, int dy) {
+	if (dx == 0 && dy == 1) return NORTH;
+	if (dx == 1 && dy == 0) return EAST;
+	if (dx == 0 && dy == -1) return SOUTH;
+	if (dx == -1 && dy == 0) return WEST;
+	return ROCKET;
+}
+
+Position computeAdjacentGoal(int depth) {
+	float insideX = goalX == 0 ? 0.6 : goalX == SIZE - 1 ? 0.4 : 0.5;
+	float insideY = goalY == 0 ? 0.6 : goalY == SIZE - 1 ? 0.4 : 0.5;
+	if (goalX == minIdx && goalY == minIdx) return computePrecisePosition(0.6, 0.6);
+	if (goalX == minIdx && goalY == maxIdx) return computePrecisePosition(0.6, 0.4);
+	if (goalX == maxIdx && goalY == minIdx) return computePrecisePosition(0.4, 0.6);
+	if (goalX == maxIdx && goalY == maxIdx) return computePrecisePosition(0.4, 0.4);
+	if (depth >= 3) {
+		int dx1 = goalX - stack[0][0];
+		int dy1 = goalY - stack[0][1];
+		int dx2 = stack[2][0] - goalX;
+		int dy2 = stack[2][1] - goalY;
+		int dir1 = getDirection(dx1, dy1);
+		int dir2 = getDirection(dx2, dy2);
+		if (dir1 == NORTH && dir2 == EAST) computePrecisePosition(0.6, 0.4);
+		if (dir1 == EAST && dir2 == NORTH) computePrecisePosition(0.4, 0.6);
+		if (dir1 == NORTH && dir2 == WEST) computePrecisePosition(0.4, 0.4);
+		if (dir1 == WEST && dir2 == NORTH) computePrecisePosition(0.6, 0.6);
+		if (dir1 == SOUTH && dir2 == EAST) computePrecisePosition(0.6, 0.6);
+		if (dir1 == EAST && dir2 == SOUTH) computePrecisePosition(0.4, 0.4);
+		if (dir1 == SOUTH && dir2 == WEST) computePrecisePosition(0.4, 0.6);
+		if (dir1 == WEST && dir2 == SOUTH) computePrecisePosition(0.6, 0.4);
+	}
+	return computePrecisePosition(insideX, insideY);
+}
+
 void dfsGoal(size_t depth, float score, float* bestScore, bool isRocket) {
 	if (score > *bestScore) {
 		*bestScore = score;
+		nextIsRocket = isRocket;
 		goalX = stack[1][0];
 		goalY = stack[1][1];
-		nextIsRocket = isRocket;
+		goalPos = computeAdjacentGoal(depth);
 		if (!isSpeedLimited()) {
 			int dx = stack[1][0] - stack[0][0];
 			int dy = stack[1][1] - stack[0][1];
@@ -134,6 +178,7 @@ void dfsGoal(size_t depth, float score, float* bestScore, bool isRocket) {
 					break;
 				goalX = stack[i][0];
 				goalY = stack[i][1];
+				goalPos = {goalX * squareSize + 0.5f, goalY * squareSize + 0.5f, 0.0};
 			}
 		}
 	}
@@ -197,26 +242,8 @@ void updateGoal(const Position& myPosition) {
 	stack[0][1] = y;
 	float bestScore = 0.0;
 	nextIsRocket = false;
+	setMiddleGoalPos();
 	dfsGoal(1, 0.0, &bestScore, false);
-	float insideX = goalX == 0 ? 0.6 : goalX == SIZE - 1 ? 0.4 : 0.5;
-	float insideY = goalY == 0 ? 0.6 : goalY == SIZE - 1 ? 0.4 : 0.5;
-	if (x == minIdx && y == minIdx) {
-		insideX = 0.6;
-		insideY = 0.6;
-	}
-	if (x == minIdx && y == maxIdx) {
-		insideX = 0.6;
-		insideY = 0.4;
-	}
-	if (x == maxIdx && y == minIdx) {
-		insideX = 0.4;
-		insideY = 0.6;
-	}
-	if (x == maxIdx && y == maxIdx) {
-		insideX = 0.4;
-		insideY = 0.4;
-	}
-	goalPos = {((float)goalX + insideX) * squareSize, ((float)goalY + insideY) * squareSize, 0.0};
 }
 
 void updateGlobals() {
@@ -289,8 +316,7 @@ void reset() {
 	robotsAlive = TOTAL_ROBOTS;
 	opponentsAlive = TEAM_ROBOTS;
 	squareSize = gladiator->maze->getSquareSize();
-	float middle = (SIZE - 1.0) * 0.5 * squareSize;
-	goalPos = {middle, middle, 0.0};
+	setMiddleGoalPos();
 	goalX = SIZE >> 1;
 	goalY = SIZE >> 1;
 	startTime = std::chrono::high_resolution_clock::now();
