@@ -49,6 +49,23 @@ int goalX = SIZE >> 1;
 int goalY = SIZE >> 1;
 Position goalPos{0.0, 0.0, 0.0};
 
+bool reverseMode = false;
+
+// Function to check if the robot is in a cul-de-sac
+bool isInCulDeSac(const Position& pos) {
+    int x = (int)(pos.x / squareSize);
+    int y = (int)(pos.y / squareSize);
+    int wallCount = 0;
+
+    // Increase wallCount for each direction where there is a wall
+    if (!maze[y][x][NORTH] || y == maxIdx) wallCount++;
+    if (!maze[y][x][EAST] || x == maxIdx) wallCount++;
+    if (!maze[y][x][SOUTH] || y == minIdx) wallCount++;
+    if (!maze[y][x][WEST] || x == minIdx) wallCount++;
+
+    return wallCount >= 3;
+}
+
 double reduceAngle(double x) {
 	x = fmod(x + M_PI, M_TAU);
 	if (x < 0) x += M_TAU;
@@ -64,6 +81,15 @@ double calculateDistance(const Position& from, const Position& to) {
 double calculateAngleToTarget(const Position& from, const Position& to) {
 	return atan2(to.y - from.y, to.x - from.x);
 }
+
+bool isTargetBehind(const Position& fromPos, const Position& toPos) {
+    double angleToTarget = calculateAngleToTarget(fromPos, toPos);
+    double angleDiff = reduceAngle(fromPos.a - angleToTarget);
+
+    // Check if the target is behind within a certain angular threshold
+    return fabs(angleDiff) > M_PI / 2 && fabs(angleDiff) < 3 * M_PI / 2;
+}
+
 
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
 
@@ -82,35 +108,78 @@ bool willHit(const Position& myPos, const Position& enemyPos) {
 	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
 }
 
-void goTo(const Position& fromPos, const Position& toPos) {
-	static const float wlimit = 0.4;
-	static const float vlimit = 0.7;
-	static const float epsilon = 0.07;
-	double consvl, consvr;
-	double dx = toPos.x - fromPos.x;
-	double dy = toPos.y - fromPos.y;
-	double d = sqrt(dx * dx + dy * dy);
+// void goTo(const Position& fromPos, const Position& toPos) {
+// 	static const float wlimit = 0.4;
+// 	static const float vlimit = 0.7;
+// 	static const float epsilon = 0.07;
+// 	double consvl, consvr;
+// 	double dx = toPos.x - fromPos.x;
+// 	double dy = toPos.y - fromPos.y;
+// 	double d = sqrt(dx * dx + dy * dy);
 
-	if (d > epsilon) {
-		double rho = atan2(dy, dx);
-		double angle = reduceAngle(rho - fromPos.a);
-		double consw = clamp(angle, -wlimit, wlimit);
-		double consv = clamp(clamp(d, 0.33, 1.5) * std::max(0.0, cos(angle)), -vlimit, vlimit);
-		consvl = clamp(consv - consw, -1.0, 1.0);
-		consvr = clamp(consv + consw, -1.0, 1.0);
-		if (isSpeedLimited()) {
-			double factor = gladiator->robot->getData().speedLimit /
-							std::max(0.1, std::max(std::abs(consvl), std::abs(consvr)));
-			consvl *= factor;
-			consvr *= factor;
-		}
-	} else {
-		consvl = 0.0;
-		consvr = 0.0;
-	}
-	gladiator->control->setWheelSpeed(WheelAxis::LEFT, consvl, false);
-	gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
+// 	if (d > epsilon) {
+// 		double rho = atan2(dy, dx);
+// 		double angle = reduceAngle(rho - fromPos.a);
+// 		double consw = clamp(angle, -wlimit, wlimit);
+// 		double consv = clamp(clamp(d, 0.33, 1.5) * std::max(0.0, cos(angle)), -vlimit, vlimit);
+// 		consvl = clamp(consv - consw, -1.0, 1.0);
+// 		consvr = clamp(consv + consw, -1.0, 1.0);
+// 		if (isSpeedLimited()) {
+// 			double factor = gladiator->robot->getData().speedLimit /
+// 							std::max(0.1, std::max(std::abs(consvl), std::abs(consvr)));
+// 			consvl *= factor;
+// 			consvr *= factor;
+// 		}
+// 	} else {
+// 		consvl = 0.0;
+// 		consvr = 0.0;
+// 	}
+// 	gladiator->control->setWheelSpeed(WheelAxis::LEFT, consvl, false);
+// 	gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
+// }
+
+void goTo(const Position& fromPos, const Position& toPos, bool reverseMode = false) {
+    static const float wlimit = 0.4;
+    static const float vlimit = 0.7;
+    static const float epsilon = 0.07;
+    double consvl, consvr;
+    double dx = toPos.x - fromPos.x;
+    double dy = toPos.y - fromPos.y;
+    double d = sqrt(dx * dx + dy * dy);
+
+
+    reverseMode = isInCulDeSac(fromPos) && isTargetBehind(fromPos, toPos);
+    if (d > epsilon) {
+        double rho = atan2(dy, dx);
+
+        // Adjust angle for reverse mode by adding PI (180 degrees) to invert direction
+        double angle = reverseMode ? reduceAngle(rho - fromPos.a + M_PI) : reduceAngle(rho - fromPos.a);
+
+        double consw = clamp(angle, -wlimit, wlimit);
+        // For reverse mode, consider moving backwards by adjusting the calculation of consv
+        double consv = reverseMode ? 
+                       -clamp(d * cos(angle), -vlimit, vlimit) : // Invert speed for reverse
+                       clamp(d * cos(angle), -vlimit, vlimit);
+
+        consvl = clamp(consv - consw, -1.0, 1.0);
+        consvr = clamp(consv + consw, -1.0, 1.0);
+
+        if (isSpeedLimited()) {
+            double factor = gladiator->robot->getData().speedLimit / std::max(0.1, std::max(std::abs(consvl), std::abs(consvr)));
+            consvl *= factor;
+            consvr *= factor;
+        }
+    } else {
+        consvl = 0.0;
+        consvr = 0.0;
+    }
+
+    // Apply the calculated wheel speeds
+    gladiator->control->setWheelSpeed(WheelAxis::LEFT, consvl, false);
+    gladiator->control->setWheelSpeed(WheelAxis::RIGHT, consvr, false);
 }
+
+
 
 void dfsFromCenter(int y, int x) {
 	if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx || connectedToCenter[y][x]) return;
@@ -153,6 +222,7 @@ void dfsGoal(size_t depth, float score, float* bestScore) {
 		double angle = gladiator->robot->getData().position.a;
 		// TODO: better calculation
 		// TODO: inverse when going backwards
+		
 		double cosa = cos(angle);
 		double sina = sin(angle);
 		prevDx = cosa < -0.5 ? -1 : cosa > 0.5 ? 1 : 0;
