@@ -182,8 +182,9 @@ void dfsGoal(size_t depth, float score, float* bestScore, bool isRocket) {
 		float momentumValue = momentum == FORWARD ? 1.0 : momentum == SIDE ? 0.5 : 0.0;
 		float alliedDist = calculateDistance(computeRealPosition(x, y, 0.5, 0.5), alliedPos);
 		float alliedAvoidanceValue = std::sqrt(alliedDist) * 1.0;
-		float addScore =
-			paintValue + rockets[y][x] * rocketValue + momentumValue + alliedAvoidanceValue;
+		bool isBorder = (x == minIdx) || (x == maxIdx) || (y == minIdx) || (y == maxIdx);
+		float addScore = paintValue * (isBorder ? 1.2 : 1.0) + rockets[y][x] * rocketValue +
+						 momentumValue + alliedAvoidanceValue;
 		float newScore = score + addScore * EXPONENTS[depth];
 		uint8_t prevPossession = possessions[y][x];
 		bool prevRocket = rockets[y][x];
