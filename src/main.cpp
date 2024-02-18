@@ -70,7 +70,7 @@ bool isSpeedLimited() { return gladiator->robot->getData().speedLimit < 0.3; }
 
 bool shouldLaunchRocket() { return gladiator->weapon->canLaunchRocket() && opponentsAlive > 0; }
 
-bool isRealRobotData(const RobotData& robotData) { return robotData.macAddress == MAC_0; }
+bool isRealRobotData(const RobotData& robotData) { return robotData.macAddress != MAC_0; }
 
 bool willHit(const Position& myPos, const Position& enemyPos) {
 	double maxRange = 4.5 * squareSize;
@@ -181,9 +181,9 @@ void updateGoal(const Position& myPosition) {
 	goalY = SIZE >> 1;
 	stack[0][0] = x;
 	stack[0][1] = y;
-	float bestScore = 0.0f;
-	dfsGoal(1, 0, &bestScore);
-	goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0};
+	float bestScore = 0.0;
+	dfsGoal(1, 0.0, &bestScore);
+	goalPos = {((float)goalX + 0.5f) * squareSize, ((float)goalY + 0.5f) * squareSize, 0.0};
 }
 
 void updateGlobals() {
@@ -192,7 +192,7 @@ void updateGlobals() {
 	opponentsAlive = 0;
 	for (int i = 0; i < 4; i++) {
 		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
-		if (other.macAddress == MAC_0) continue;
+		if (!isRealRobotData(other)) continue;
 		int y = (int)(other.position.y / squareSize);
 		int x = (int)(other.position.x / squareSize);
 		if (!other.lifes) {
@@ -226,9 +226,9 @@ void tryLaunchingRockets(const RobotData& myRobot) {
 	RobotList allBots = gladiator->game->getPlayingRobotsId();
 	for (int i = 0; i < TOTAL_ROBOTS; i++) {
 		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
-		if (other.teamId != myRobot.teamId && other.lifes && other.position.x > 0 &&
-			other.position.y > 0 && myRobot.position.x > 0 && myRobot.position.y > 0 &&
-			willHit(myRobot.position, other.position)) {
+		if (isRealRobotData(other) && other.teamId != myRobot.teamId && other.lifes &&
+			other.position.x > 0 && other.position.y > 0 && myRobot.position.x > 0 &&
+			myRobot.position.y > 0 && willHit(myRobot.position, other.position)) {
 			gladiator->weapon->launchRocket();
 			return;
 		}
@@ -253,14 +253,15 @@ void reset() {
 	currentTimeBlock = 0;
 	minIdx = 0;
 	maxIdx = SIZE - 1;
-	opponentsAlive = 2;
-	robotsAlive = 4;
+	robotsAlive = TOTAL_ROBOTS;
+	opponentsAlive = TEAM_ROBOTS;
+	squareSize = gladiator->maze->getSquareSize();
+	float middle = (SIZE - 1.0) * 0.5 * squareSize;
+	goalPos = {middle, middle, 0.0};
 	goalX = SIZE >> 1;
 	goalY = SIZE >> 1;
 	startTime = std::chrono::high_resolution_clock::now();
-	squareSize = gladiator->maze->getSquareSize();
 	teamId = gladiator->robot->getData().teamId;
-	goalPos = {0.0, 0.0, 0.0};
 	for (int y = 0; y < SIZE; ++y) {
 		for (int x = 0; x < SIZE; ++x) {
 			const MazeSquare* mazeSquare = gladiator->maze->getSquare(x, y);
@@ -288,7 +289,7 @@ void loop() {
 	Position myPosition = gladiator->robot->getData().position;
 	if (frameCount == 0) delay(500);
 	if ((frameCount & 63) == 0) checkTime();
-	if (shouldLaunchRocket()) tryLaunchingRockets(myRobot);
+	if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0) tryLaunchingRockets(myRobot);
 	if ((frameCount & 15) == 0 ||
 		(myPosition.x == goalX && myPosition.y == goalY && possessions[goalY][goalX] == teamId)) {
 		updateGoal(myPosition);
