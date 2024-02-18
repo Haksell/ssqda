@@ -6,9 +6,13 @@
 
 // TODO: use previous wheel speed and update
 // TODO: go backwards when appropriate
-// TODO: preshot where people will be
 // TODO: bezier/spline to predict better path
 // TODO: find global variables to reset
+// TODO: escape rockets
+
+// TODO: preshot where people will be
+// TODO: snipe
+// TODO: reduce launch angle
 
 #define SIZE 12
 #define DFS_DEPTH 9
@@ -16,32 +20,36 @@
 #define EXPONENTIONAL_EXPONENT 0.9
 #define MAC_0 "00:00:00:00:00:00"
 
+constexpr int TEAM_ROBOTS = 2;
+constexpr int TOTAL_ROBOTS = TEAM_ROBOTS << 1;
+
 float EXPONENTS[DFS_DEPTH] = {1.0};
 
-typedef enum e_dir { NORTH = 0, EAST, SOUTH, WEST, ROCKET, DEAD } t_dir;
+typedef enum e_dir { NORTH = 0, EAST, SOUTH, WEST, ROCKET } t_dir;
+typedef enum e_momentum { FORWARD = 0, BACKWARD, STATIC, SIDE } t_momentum;
 
 Gladiator* gladiator;
 bool maze[SIZE][SIZE][4];
 bool rockets[SIZE][SIZE];
-uint8_t possessions[SIZE][SIZE];
 bool connectedToCenter[SIZE][SIZE];
+uint8_t possessions[SIZE][SIZE];
 int stack[DFS_DEPTH][2];
 uint8_t teamId = 0;
 std::chrono::high_resolution_clock::time_point startTime;
 float squareSize = 0.25f;
 int frameCount = 0;
 int currentTimeBlock = 0;
-int robotsAlive = 4;
-int opponentsAlive = 2;
+int robotsAlive = TOTAL_ROBOTS;
+int opponentsAlive = TEAM_ROBOTS;
 int minIdx = 0;
 int maxIdx = SIZE - 1;
 int bestX = SIZE >> 1;
 int bestY = SIZE >> 1;
 
-double reductionAngle(double x) {
-	x = fmod(x + PI, 2 * PI);
-	if (x < 0) x += 2 * PI;
-	return x - PI;
+double reduceAngle(double x) {
+	x = fmod(x + M_PI, M_TAU);
+	if (x < 0) x += M_TAU;
+	return x - M_PI;
 }
 
 double calculateDistance(const Position& myPos, const Position& enemyPos) {
@@ -67,7 +75,7 @@ void goTo(Position fromPos, Position toPos) {
 
 	if (d > epsilon) {
 		double rho = atan2(dy, dx);
-		double angle = reductionAngle(rho - fromPos.a);
+		double angle = reduceAngle(rho - fromPos.a);
 		double consw = clamp(angle, -wlimit, wlimit);
 		double consv = clamp(clamp(d, 0.33, 1.5) * std::max(0.0, cos(angle)), -vlimit, vlimit);
 		consvl = clamp(consv - consw, -1.0, 1.0);
@@ -93,7 +101,7 @@ bool willHit(const Position& myPos, const Position& enemyPos, double myAngle) {
 	double distanceToEnemy = calculateDistance(myPos, enemyPos);
 	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
 	if (distanceToEnemy > maxRange) return false;
-	double angleDifference = reductionAngle(myAngle - angleToEnemy);
+	double angleDifference = reduceAngle(myAngle - angleToEnemy);
 	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
 }
 
