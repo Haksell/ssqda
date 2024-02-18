@@ -30,6 +30,16 @@ float EXPONENTS[DFS_DEPTH] = {1.0};
 typedef enum e_dir { NORTH = 0, EAST, SOUTH, WEST, ROCKET } t_dir;
 typedef enum e_momentum { FORWARD = 0, BACKWARD, STATIC, SIDE } t_momentum;
 
+struct Velocity {
+	int id;
+	Position lastPos;
+	std::chrono::high_resolution_clock::time_point firstTime;
+	Position newPos;
+	std::chrono::high_resolution_clock::time_point lastTime;
+};
+
+Velocity enemyVelocity[TEAM_ROBOTS];
+
 Gladiator* gladiator;
 bool maze[SIZE][SIZE][4];
 bool rockets[SIZE][SIZE];
@@ -90,6 +100,9 @@ bool isTargetBehind(const Position& fromPos, const Position& toPos) {
     return fabs(angleDiff) > M_PI / 2 && fabs(angleDiff) < 3 * M_PI / 2;
 }
 
+double calculateSpeed(const Position& lastPos, const Position& newPos, double deltaTime) {
+	return calculateDistance(lastPos, newPos) / deltaTime; // TODO simplify
+}
 
 double clamp(double x, double mini, double maxi) { return x < mini ? mini : x > maxi ? maxi : x; }
 
@@ -99,13 +112,41 @@ bool shouldLaunchRocket() { return gladiator->weapon->canLaunchRocket() && oppon
 
 bool isRealRobotData(const RobotData& robotData) { return robotData.macAddress != MAC_0; }
 
-bool willHit(const Position& myPos, const Position& enemyPos) {
-	double maxRange = 4.5 * squareSize;
-	double distanceToEnemy = calculateDistance(myPos, enemyPos);
-	if (distanceToEnemy > maxRange) return false;
-	double angleToEnemy = calculateAngleToTarget(myPos, enemyPos);
-	double angleDifference = reduceAngle(myPos.a - angleToEnemy);
-	return std::fabs(angleDifference) <= 0.15 / distanceToEnemy;
+Position predictFuturePosition(Position currentPosition, double speed, double angle,
+							   double deltaTimeSec) {
+	static const float preshotFactor = 0.5;
+	float displacementX = speed * cos(angle) * deltaTimeSec * preshotFactor;
+	float displacementY = speed * sin(angle) * deltaTimeSec * preshotFactor;
+	float futureX = currentPosition.x + displacementX;
+	float futureY = currentPosition.y + displacementY;
+	return {futureX, futureY};
+}
+
+bool willHit(const Position& myPos) {
+	for (int i = 0; i < 2; ++i) {
+		if (gladiator->game->getOtherRobotData(enemyVelocity[i].id).macAddress == MAC_0) continue;
+		double maxRange = 5.0 * squareSize;
+		auto deltaTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+							 enemyVelocity[i].lastTime - enemyVelocity[i].firstTime)
+							 .count() /
+						 1000;
+		double speed = calculateSpeed(enemyVelocity[i].lastPos, enemyVelocity[i].newPos, deltaTime);
+		double distanceToEnemy =
+			calculateDistance(myPos, enemyVelocity[i].newPos); // TODO: check in loop instead
+		double enemyAngle =
+			calculateAngleToTarget(enemyVelocity[i].lastPos, enemyVelocity[i].newPos);
+		if (distanceToEnemy > maxRange) continue;
+		auto enemyFuturePosition =
+			predictFuturePosition(enemyVelocity[i].newPos, speed, enemyAngle, deltaTime);
+		for (double time = 0; time <= 4.0; time += 0.01) {
+			Position rocketPosAtTime = predictFuturePosition(myPos, 0.5, myPos.a, time);
+			double distance = calculateDistance(enemyFuturePosition, rocketPosAtTime);
+			if (distance <= 0.2) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 // void goTo(const Position& fromPos, const Position& toPos) {
@@ -315,19 +356,6 @@ void updateGlobals() {
 	}
 }
 
-void tryLaunchingRockets(const RobotData& myRobot) {
-	RobotList allBots = gladiator->game->getPlayingRobotsId();
-	for (int i = 0; i < TOTAL_ROBOTS; i++) {
-		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
-		if (isRealRobotData(other) && other.teamId != myRobot.teamId && other.lifes &&
-			other.position.x > 0 && other.position.y > 0 && myRobot.position.x > 0 &&
-			myRobot.position.y > 0 && willHit(myRobot.position, other.position)) {
-			gladiator->weapon->launchRocket();
-			return;
-		}
-	}
-}
-
 void checkTime() {
 	auto currentTime = std::chrono::high_resolution_clock::now();
 	auto deltaTime =
@@ -338,6 +366,44 @@ void checkTime() {
 		++minIdx;
 		--maxIdx;
 		connectToCenter();
+	}
+}
+
+void createVelocity() {
+	RobotList allBots = gladiator->game->getPlayingRobotsId();
+	int o = 0;
+	for (int i = 0; i < 4; i++) {
+		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
+		if (other.macAddress == MAC_0) continue;
+		if (other.teamId != gladiator->robot->getData().teamId) {
+			enemyVelocity[o].id = other.id;
+			enemyVelocity[o].lastPos.x = other.position.x;
+			enemyVelocity[o].lastPos.y = other.position.y;
+			enemyVelocity[o].newPos.x = other.position.x;
+			enemyVelocity[o].newPos.y = other.position.y;
+			enemyVelocity[o].firstTime = std::chrono::high_resolution_clock::now();
+			enemyVelocity[o].lastTime = std::chrono::high_resolution_clock::now();
+			o++;
+		}
+	}
+}
+
+void updateVelocity() {
+	RobotList allBots = gladiator->game->getPlayingRobotsId();
+	int o = 0;
+	for (int i = 0; i < 4; i++) {
+		RobotData other = gladiator->game->getOtherRobotData(allBots.ids[i]);
+		if (other.macAddress == MAC_0) continue;
+		if (other.teamId != gladiator->robot->getData().teamId) {
+			enemyVelocity[o].id = other.id;
+			enemyVelocity[o].lastPos.x = enemyVelocity[o].newPos.x;
+			enemyVelocity[o].lastPos.y = enemyVelocity[o].newPos.y;
+			enemyVelocity[o].firstTime = enemyVelocity[o].lastTime;
+			enemyVelocity[o].newPos.x = other.position.x;
+			enemyVelocity[o].newPos.y = other.position.y;
+			enemyVelocity[o].lastTime = std::chrono::high_resolution_clock::now();
+			o++;
+		}
 	}
 }
 
@@ -365,6 +431,7 @@ void reset() {
 			rockets[y][x] = mazeSquare->coin.value;
 		}
 	}
+	createVelocity();
 	connectToCenter();
 }
 
@@ -382,13 +449,12 @@ void loop() {
 	Position myPosition = gladiator->robot->getData().position;
 	if (frameCount == 0) delay(500);
 	if ((frameCount & 63) == 0) checkTime();
-	if (gladiator->weapon->canLaunchRocket() && opponentsAlive > 0) tryLaunchingRockets(myRobot);
+	if ((frameCount % 333) == 0) updateVelocity();
+	if (shouldLaunchRocket() && willHit(myRobot.position)) gladiator->weapon->launchRocket();
 	if ((frameCount & 15) == 0 ||
 		(myPosition.x == goalX && myPosition.y == goalY && possessions[goalY][goalX] == teamId)) {
 		updateGoal(myPosition);
-		if (shouldLaunchRocket() && rockets[goalY][goalX] &&
-			(goalX != myPosition.x || goalY != myPosition.y))
-			gladiator->weapon->launchRocket();
+		if (shouldLaunchRocket() && rockets[goalY][goalX]) gladiator->weapon->launchRocket();
 	}
 	goTo(myPosition, goalPos);
 	++frameCount;
