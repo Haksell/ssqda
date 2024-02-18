@@ -9,11 +9,12 @@
 // TODO: bezier/spline to predict better path
 // TODO: find global variables to reset
 // TODO: escape rockets
-// TODO: penalize close section to close section through walls
 
 // TODO: preshot where people will be
 // TODO: snipe
 // TODO: reduce launch angle
+
+// TODO: commit suicide if score > opponent and all opponents dead
 
 #define SIZE 12
 #define DFS_DEPTH 9
@@ -130,47 +131,69 @@ void connectToCenter() {
 }
 
 void dfsGoal(size_t depth, float score, float* bestScore) {
-	static const int neighbors[5][3] = {
-		{0, 0, ROCKET}, {0, 1, NORTH}, {1, 0, EAST}, {0, -1, SOUTH}, {-1, 0, WEST},
-	};
 	if (score > *bestScore) {
 		*bestScore = score;
-		int dx = stack[1][0] - stack[0][0];
-		int dy = stack[1][1] - stack[0][1];
 		goalX = stack[1][0];
 		goalY = stack[1][1];
-		for (size_t i = 2; i < depth; ++i) {
-			if (stack[i][0] - stack[i - 1][0] != dx || stack[i][1] - stack[i - 1][1] != dy) break;
-			goalX = stack[i][0];
-			goalY = stack[i][1];
+		if (!isSpeedLimited()) {
+			int dx = stack[1][0] - stack[0][0];
+			int dy = stack[1][1] - stack[0][1];
+			for (size_t i = 2; i < depth; ++i) {
+				if (stack[i][0] - stack[i - 1][0] != dx || stack[i][1] - stack[i - 1][1] != dy)
+					break;
+				goalX = stack[i][0];
+				goalY = stack[i][1];
+			}
 		}
 	}
 	if (depth == DFS_DEPTH) return;
 	float rocketValue = (shouldLaunchRocket() ? 1.2 : 3.0) * opponentsAlive;
+	int prevDx, prevDy;
+	if (depth == 1) {
+		double angle = gladiator->robot->getData().position.a;
+		// TODO: better calculation
+		// TODO: inverse when going backwards
+		double cosa = cos(angle);
+		double sina = sin(angle);
+		prevDx = cosa < -0.5 ? -1 : cosa > 0.5 ? 1 : 0;
+		prevDy = sina < -0.5 ? -1 : sina > 0.5 ? 1 : 0;
+	} else {
+		prevDx = stack[depth - 1][0] - stack[depth - 2][0];
+		prevDy = stack[depth - 1][1] - stack[depth - 2][1];
+	}
+	static const int neighbors[5][3] = {
+		{0, 0, ROCKET}, {0, 1, NORTH}, {1, 0, EAST}, {0, -1, SOUTH}, {-1, 0, WEST},
+	};
 	for (size_t i = 0; i < 5; ++i) {
 		t_dir dir = (t_dir)neighbors[i][2];
 		if (depth != 1 && dir == ROCKET) continue;
 		int x = stack[depth - 1][0] + neighbors[i][0];
 		int y = stack[depth - 1][1] + neighbors[i][1];
 		if (x < minIdx || x > maxIdx || y < minIdx || y > maxIdx) continue;
-		float paintValue = possessions[y][x] == teamId ? 0.05 : possessions[y][x] == 0 ? 1 : 2;
+		float paintValue = possessions[y][x] == teamId ? 0.01 : possessions[y][x] == 0 ? 1 : 2;
 		bool isWall = (dir == NORTH && !maze[y][x][SOUTH]) || (dir == EAST && !maze[y][x][WEST]) ||
 					  (dir == SOUTH && !maze[y][x][NORTH]) || (dir == WEST && !maze[y][x][EAST]);
-		if (isWall && connectedToCenter[stack[depth - 1][1]][stack[depth - 1][0]]) continue;
-		bool straightPath =
-			(depth >= 2) &&
-			((x - stack[depth - 1][0]) == (stack[depth - 1][0] - stack[depth - 2][0])) &&
-			((y - stack[depth - 1][1]) == (stack[depth - 1][1] - stack[depth - 2][1]));
-		bool goesBack = (depth >= 2) && (x == stack[depth - 2][0]) && (y == stack[depth - 2][1]);
-		float addScore = paintValue + rockets[y][x] * rocketValue + 0.5 * straightPath -
-						 0.2 * (dir == ROCKET) - 0.2 * goesBack;
+		if (isWall && (connectedToCenter[stack[depth - 1][1]][stack[depth - 1][0]] ||
+					   !connectedToCenter[y][x]))
+			continue;
+		int newDx = x - stack[depth - 1][0];
+		int newDy = y - stack[depth - 1][1];
+		t_momentum momentum = (newDx == prevDx) && (newDy == prevDy)	 ? FORWARD
+							  : (newDx == -prevDx) && (newDy == -prevDy) ? BACKWARD
+							  : (dir == ROCKET)							 ? STATIC
+																		 : SIDE;
+		float momentumValue = momentum == FORWARD ? 0.6 : momentum == SIDE ? 0.2 : 0.0;
+		float addScore = paintValue + rockets[y][x] * rocketValue + momentumValue;
 		float newScore = score + addScore * EXPONENTS[depth];
-		uint8_t prev = possessions[y][x];
+		uint8_t prevPossession = possessions[y][x];
+		bool prevRocket = rockets[y][x];
 		possessions[y][x] = teamId;
+		rockets[y][x] = false;
 		stack[depth][0] = x;
 		stack[depth][1] = y;
 		dfsGoal(depth + 1, newScore, bestScore);
-		possessions[y][x] = prev;
+		possessions[y][x] = prevPossession;
+		rockets[y][x] = prevRocket;
 	}
 }
 
